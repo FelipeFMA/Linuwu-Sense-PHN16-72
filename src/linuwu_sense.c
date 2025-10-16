@@ -3844,30 +3844,53 @@ enum acer_wmi_predator_v4_oc {
  
  
  
+ /*
+  * Some firmwares expect the RGB per-zone setter (method id 6 under WMID_GUID4)
+  * to receive an ACPI buffer consisting of 4 bytes: { zone_mask, R, G, B }.
+  * Sending a packed u64 can be ignored or interpreted as zeros, turning LEDs off.
+  * Use the buffer form for maximum compatibility (mirrors the working acer module).
+  */
+ struct ls_led_zone_set_param {
+     u8 zone;
+     u8 red;
+     u8 green;
+     u8 blue;
+ } __packed;
+
  static acpi_status set_per_zone_color(struct per_zone_color *input) {
      acpi_status status;
-     u64 *zones[] = { &input->zone1, &input->zone2, &input->zone3, &input->zone4 };
-     u8 zone_ids[] = { 0x1, 0x2, 0x4, 0x8 };
- 
-     status = set_kb_status(0, 0, input->brightness, 0, 0, 0, 0);
+     u64 zone_vals[4] = { input->zone1, input->zone2, input->zone3, input->zone4 };
+     const u8 zone_ids[4] = { 0x1, 0x2, 0x4, 0x8 };
+
+     /* Ensure keyboard is in static mode with desired brightness first */
+     status = set_kb_status(0 /* static */, 0 /* speed */, input->brightness, 0 /* dir */, 0, 0, 0);
      if (ACPI_FAILURE(status)) {
          pr_err("Error setting KB status.\n");
          return -ENODEV;
      }
- 
+
      for (int i = 0; i < 4; i++) {
-         *zones[i] = (cpu_to_be64(*zones[i]) >> 32) | zone_ids[i];
-         status = WMI_gaming_execute_u64(ACER_WMID_SET_GAMING_RGB_KB_METHODID, *zones[i], NULL);
+         u64 v = zone_vals[i] & 0xFFFFFFULL; /* RRGGBB */
+         struct ls_led_zone_set_param p = {
+             .zone = zone_ids[i],
+             .red = (u8)((v >> 16) & 0xFF),
+             .green = (u8)((v >> 8) & 0xFF),
+             .blue = (u8)(v & 0xFF),
+         };
+         struct acpi_buffer in = { (acpi_size)sizeof(p), (void *)&p };
+
+         /* Method id 6 under WMID_GUID4 */
+         status = wmi_evaluate_method(WMID_GUID4, 0, ACER_WMID_SET_GAMING_RGB_KB_METHODID, &in, NULL);
          if (ACPI_FAILURE(status)) {
              pr_err("Error setting KB color (zone %d): %s\n", i + 1, acpi_format_exception(status));
              return status;
          }
      }
-     /* set per_zone to 1*/
- 
+
+     /* Mark state as per-zone */
      current_kb_state.per_zone = 1;
- 
-     return status;  
+
+     return AE_OK;
  }
  
  static ssize_t per_zoned_rgb_kb_show(struct device *dev, struct device_attribute *attr,char *buf){
