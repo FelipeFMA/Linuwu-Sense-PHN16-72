@@ -251,6 +251,45 @@ The `four_zone_mode` controls advanced RGB effects for your keyboard, requiring 
     - `0`: Blue (black for Neon)
  
 The thermal and fan profiles will be saved and loaded on each reboot, ensuring that the settings remain persistent across restarts.
+
+## 🧰 CLI Tool: linuwuctl
+
+A small Python CLI is included to simplify controlling the module without typing long echo commands. It wraps the sysfs interfaces described above.
+
+- Location: `tools/linuwuctl.py`
+- Requirements: Python 3.8+, module loaded, root privileges for writes
+
+Make it executable (optional) and show help:
+
+```bash
+chmod +x tools/linuwuctl.py
+./tools/linuwuctl.py --help
+```
+
+Examples:
+
+- Power profiles:
+    - List profiles: `./tools/linuwuctl.py power list`
+    - Get current: `./tools/linuwuctl.py power get`
+    - Set: `sudo ./tools/linuwuctl.py power set balanced`
+
+- Fan control:
+    - Auto: `sudo ./tools/linuwuctl.py fan auto`
+    - Set both to 60%: `sudo ./tools/linuwuctl.py fan set 60`
+    - Set CPU 50%, GPU 70%: `sudo ./tools/linuwuctl.py fan set 50 70`
+    - Or: `sudo ./tools/linuwuctl.py fan set --cpu 50 --gpu 70`
+
+- Keyboard RGB (four-zone):
+    - Per-zone static (same color all zones): `sudo ./tools/linuwuctl.py rgb per-zone 4287f5 -b 100`
+    - Per-zone static (each zone): `sudo ./tools/linuwuctl.py rgb per-zone 4287f5 ff5733 33ff57 ff33a6 -b 80`
+    - Effect (e.g., wave mode id 3, speed 1, full brightness, direction 2):
+        `sudo ./tools/linuwuctl.py rgb effect wave -s 1 -b 100 -d 2 -c 0000ff`
+
+Notes:
+- On Nitro models, paths are automatically detected.
+- If you get permission errors, use `sudo`.
+- The tool validates inputs and prints helpful errors if a feature path is missing (e.g., per-key RGB is not supported).
+
 ## GUI:
 - [Div Acer Manager Max By PXDiv](https://github.com/PXDiv/Div-Acer-Manager-Max)
 - [GUI LinuwuSense By KumarVivek](https://github.com/kumarvivek1752/Linuwu-Sense-GUI/tree/main)
