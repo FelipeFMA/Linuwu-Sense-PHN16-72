@@ -226,6 +226,19 @@ def _fan_path() -> str:
     return p
 
 
+def _battery_limit_path() -> str:
+    """Return the sysfs path to the battery limiter (0/1)."""
+    sense = _detect_sense_dir()
+    if not sense:
+        sys.stderr.write(
+            "Could not find predator_sense or nitro_sense directory. Is the module loaded?\n"
+        )
+        sys.exit(2)
+    p = os.path.join(sense, "battery_limiter")
+    _require_path(p, "battery_limiter")
+    return p
+
+
 def cmd_fan_auto(_: argparse.Namespace) -> None:
     p = _fan_path()
     _write_text(p, "0,0\n")
@@ -256,6 +269,44 @@ def cmd_fan_set(args: argparse.Namespace) -> None:
     gpu = _parse_percent_or_auto(str(gpu))
     _write_text(p, f"{cpu},{gpu}\n")
     print(f"OK: fan set CPU={cpu} GPU={gpu}")
+
+
+def _parse_on_off(val: str) -> int:
+    s = str(val).strip().lower()
+    truthy = {"1", "on", "true", "yes", "y", "enable", "enabled"}
+    falsy = {"0", "off", "false", "no", "n", "disable", "disabled"}
+    if s in truthy:
+        return 1
+    if s in falsy:
+        return 0
+    raise ValueError("Expected on/off (or 1/0, true/false, yes/no)")
+
+
+def cmd_battery_get(_: argparse.Namespace) -> None:
+    p = _battery_limit_path()
+    print(_read_text(p))
+
+
+def cmd_battery_set(args: argparse.Namespace) -> None:
+    p = _battery_limit_path()
+    try:
+        v = _parse_on_off(args.mode)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    _write_text(p, f"{v}\n")
+    print(f"OK: battery limit set to {'ON (80%)' if v == 1 else 'OFF (100%)'}")
+
+
+def cmd_battery_on(_: argparse.Namespace) -> None:
+    p = _battery_limit_path()
+    _write_text(p, "1\n")
+    print("OK: battery limit ON (80%)")
+
+
+def cmd_battery_off(_: argparse.Namespace) -> None:
+    p = _battery_limit_path()
+    _write_text(p, "0\n")
+    print("OK: battery limit OFF (100%)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -355,6 +406,29 @@ def build_parser() -> argparse.ArgumentParser:
         cmd_fan_set(a)
     fset.set_defaults(func=_fan_set_wrapper)
 
+    # battery
+    battery = sub.add_parser("battery", help="Battery limiter (80%%)")
+    battery.set_defaults(func=lambda _args, _parser=battery: _parser.print_help())
+    battery_sub = battery.add_subparsers(dest="battery_cmd")
+
+    bget = battery_sub.add_parser("get", help="Print current 80%% limiter state (0/1)")
+    bget.set_defaults(func=cmd_battery_get)
+
+    bon = battery_sub.add_parser("on", help="Enable 80%% battery limit")
+    bon.set_defaults(func=cmd_battery_on)
+
+    boff = battery_sub.add_parser("off", help="Disable 80%% battery limit")
+    boff.set_defaults(func=cmd_battery_off)
+
+    bset = battery_sub.add_parser("set", help="Set limiter to on/off or 1/0")
+    bset.add_argument("mode", nargs="?", help="on/off or 1/0")
+    def _battery_set_wrapper(a: argparse.Namespace):
+        if a.mode is None:
+            bset.print_help()
+            return
+        cmd_battery_set(a)
+    bset.set_defaults(func=_battery_set_wrapper)
+
     return p
 
 
@@ -366,8 +440,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.func(args)
         return 0
     except SystemExit as e:
-        # argparse or our explicit SystemExit
-        return int(e.code or 1)
+        # argparse or our explicit SystemExit; preserve proper exit codes
+        try:
+            return 0 if e.code is None else int(e.code)
+        except Exception:
+            return 1
     except FileNotFoundError as e:
         sys.stderr.write(f"File not found: {e}\n")
         return 2

@@ -58,6 +58,25 @@ Tools and CLI helper
 
 There is a helper script at `tools/linuwuctl.py` that performs common sysfs reads/writes and validates input formats. Root privileges are required for writes.
 
+Battery limiter (80%)
+
+On supported machines the driver exposes a `battery_limiter` sysfs attribute (1=limit to ~80%, 0=full charge). The CLI provides convenient wrappers:
+
+```bash
+# Show if the 80% limiter is enabled (1) or disabled (0)
+sudo python3 tools/linuwuctl.py battery get
+
+# Enable 80% charge limit
+sudo python3 tools/linuwuctl.py battery on
+
+# Disable 80% charge limit
+sudo python3 tools/linuwuctl.py battery off
+
+# Or explicitly set with on/off or 1/0
+sudo python3 tools/linuwuctl.py battery set on
+sudo python3 tools/linuwuctl.py battery set 0
+```
+
 License and liability
 
 This project is released under the GNU GPLv3. Use it at your own risk; there is no warranty and the author disclaims liability for damages.

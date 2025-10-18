@@ -658,6 +658,11 @@ class LinuwuApp(Adw.Application):
         row_current.add_suffix(current_label)
         group.add(row_current)
 
+        # Battery limiter (80%) switch
+        battery_row = Adw.SwitchRow(title="Battery limit (80%)")
+        battery_row.set_active(False)
+        group.add(battery_row)
+
         def refresh() -> None:
             nonlocal choices, current
             ok_list, list_out = run_privileged(["power", "list"])
@@ -676,6 +681,22 @@ class LinuwuApp(Adw.Application):
                 combo.set_selected(choices.index(current))
             elif choices:
                 combo.set_selected(0)
+
+            # Battery limiter status
+            ok_bat, bat_out = run_privileged(["battery", "get"])
+            try:
+                value = int(bat_out.strip()) if ok_bat and bat_out else 0
+            except Exception:
+                value = 0
+            # Guarded set to avoid triggering write during refresh
+            nonlocal power_refreshing
+            prev = power_refreshing
+            power_refreshing = True
+            try:
+                battery_row.set_sensitive(ok_bat)
+                battery_row.set_active(True if value == 1 else False)
+            finally:
+                power_refreshing = prev
 
         # Instant apply on selection changes with guard during refresh
         power_refreshing = False
@@ -696,6 +717,25 @@ class LinuwuApp(Adw.Application):
             except Exception as e:
                 notifier.error(f"Error: {e}")
         combo.connect("notify::selected", lambda *_: _apply_power_from_combo())
+
+        def _on_battery_toggle(*_):
+            nonlocal power_refreshing
+            if power_refreshing:
+                return
+            val = battery_row.get_active()
+            ok, msg = run_privileged(["battery", "on" if val else "off"])
+            if ok:
+                notifier.info("Battery limit enabled" if val else "Battery limit disabled")
+            else:
+                notifier.error(msg)
+                # Revert switch on failure without re-triggering
+                prev = power_refreshing
+                power_refreshing = True
+                try:
+                    battery_row.set_active(not val)
+                finally:
+                    power_refreshing = prev
+        battery_row.connect("notify::active", _on_battery_toggle)
 
         btn_refresh = Gtk.Button(label="Refresh")
         btn_refresh.set_halign(Gtk.Align.START)
