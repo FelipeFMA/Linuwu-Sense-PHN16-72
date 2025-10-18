@@ -6,17 +6,18 @@ A minimal GTK4 + libadwaita GUI to control the Linuwu-Sense kernel module.
 
 Features:
 - Keyboard RGB four-zone: per-zone static or simple effect
-- Power profile: get/set ACPI platform_profile
+- Power profile: get/list/set ACPI platform_profile
 - Fans: set auto or CPU/GPU percentages
 
 Notes:
-- This GUI writes to /sys paths via the Linuwu-Sense module. Most actions
-  require root privileges. Run with sudo or install a polkit rule (not provided).
-- Uses constants from tools/linuwuctl.py but avoids calling its CLI helpers
-  directly to prevent sys.exit() from killing the GUI on missing paths.
+- Privileged operations are executed via polkit using `pkexec` by spawning
+    the CLI helper `linuwuctl.py`. If permission is denied when running
+    unprivileged, the GUI will re-run the action with `pkexec` and prompt for
+    authentication when needed.
+- The GUI does not write directly to /sys; it shells out to the CLI.
 
 Dependencies (Debian/Ubuntu):
-- sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+- sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 policykit-1
 
 Run:
 - python3 tools/linuwu_sense_gui.py
@@ -25,13 +26,15 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import List, Optional
+from typing import List, Optional, Callable
+import subprocess
+import shutil
 
 try:
     import gi
     gi.require_version("Gtk", "4.0")
     gi.require_version("Adw", "1")
-    from gi.repository import Adw, Gtk, Gio
+    from gi.repository import Adw, Gtk, Gio, GLib
 except Exception as e:
     sys.stderr.write(
         f"Failed to import GTK4/libadwaita Python bindings: {e}\n"
@@ -52,6 +55,66 @@ except Exception as e:
         f"Failed to import linuwuctl from tools/: {e}\n"
     )
     raise
+
+
+# ---------- Privilege helper via polkit (pkexec) ----------
+LINUWUCTL_PATH = os.path.join(HERE, "linuwuctl.py")
+
+
+def _have_pkexec() -> bool:
+    return shutil.which("pkexec") is not None
+
+
+def _run_linuwuctl(args: List[str]) -> tuple[int, str, str]:
+    """
+    Run the CLI helper without elevation. Returns (code, stdout, stderr).
+    """
+    cmd = [sys.executable, LINUWUCTL_PATH] + args
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=HERE,
+    )
+    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+
+def _run_with_pkexec(args: List[str]) -> tuple[int, str, str]:
+    """
+    Run the CLI helper via pkexec. Returns (code, stdout, stderr).
+    """
+    if not _have_pkexec():
+        return 127, "", "pkexec not found; install policykit-1"
+    cmd = ["pkexec", sys.executable, LINUWUCTL_PATH] + args
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=HERE,
+    )
+    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+
+def run_privileged(args: List[str]) -> tuple[bool, str]:
+    """
+    Try to run CLI normally; if permission-related failure, retry with pkexec.
+    Returns (success, message) combining stdout/stderr).
+    """
+    code, out, err = _run_linuwuctl(args)
+    if code == 0:
+        return True, out or "OK"
+    # If PermissionError was propagated by CLI, it returns code 3
+    perm_denied = (code == 3) or ("Permission denied" in err or "permission" in err.lower())
+    if perm_denied:
+        code2, out2, err2 = _run_with_pkexec(args)
+        if code2 == 0:
+            return True, out2 or "OK"
+        msg = err2 or out2 or err or out or f"Failed with code {code2}"
+        return False, msg
+    msg = err or out or f"Failed with code {code}"
+    return False, msg
 
 
 def path_exists(p: str) -> bool:
@@ -117,31 +180,61 @@ class LinuwuApp(Adw.Application):
 
         win = Adw.ApplicationWindow(application=self)
         win.set_title("Linuwu Sense")
-        win.set_default_size(680, 520)
+        win.set_default_size(720, 560)
 
         # Header and status
         header = Adw.HeaderBar()
+        # App menu
+        menu_model = Gio.Menu()
+        menu_model.append("Refresh All", "app.refresh")
+        menu_model.append("About", "app.about")
+        menu_btn = Gtk.MenuButton()
+        menu_btn.set_icon_name("open-menu-symbolic")
+        menu_btn.set_menu_model(menu_model)
+        header.pack_end(menu_btn)
+
         status = Gtk.Label(xalign=0)
         status.add_css_class("dim-label")
         notifier = StatusNotifier(status)
 
-        # Build pages
+        # Build pages and navigation
         stack = Adw.ViewStack()
+        # Title switcher in header
+        switcher_title = Adw.ViewSwitcherTitle()
+        try:
+            switcher_title.set_stack(stack)
+        except Exception:
+            pass
+        header.set_title_widget(switcher_title)
+        # Small screens: bottom bar
         switcher = Adw.ViewSwitcherBar()
         switcher.set_stack(stack)
 
-        keyboard = self._build_keyboard_page(notifier)
-        power = self._build_power_page(notifier)
-        fans = self._build_fans_page(notifier)
+        keyboard, kb_refresh = self._build_keyboard_page(notifier)
+        power, power_refresh = self._build_power_page(notifier)
+        fans, fans_refresh = self._build_fans_page(notifier)
 
-        stack.add_titled(keyboard, "keyboard", "Keyboard")
-        stack.add_titled(power, "power", "Power")
-        stack.add_titled(fans, "fans", "Fans")
+        kb_page = stack.add_titled(keyboard, "keyboard", "Keyboard")
+        power_page = stack.add_titled(power, "power", "Power")
+        fans_page = stack.add_titled(fans, "fans", "Fans")
+        # Set icons for Keyboard, Power and Fans pages
+        try:
+            kb_page.set_icon_name("keyboard-brightness-symbolic")
+            power_page.set_icon_name("power-profile-performance-symbolic")
+            fans_page.set_icon_name("weather-windy-symbolic")
+        except Exception:
+            pass
 
         # Layout
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         vbox.append(header)
-        vbox.append(stack)
+        content_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        content_box.set_margin_start(6)
+        content_box.set_margin_end(6)
+        content_box.set_margin_top(6)
+        content_box.set_margin_bottom(6)
+        content_box.append(stack)
+        vbox.append(content_box)
         vbox.append(switcher)
 
         # Footer status
@@ -153,33 +246,91 @@ class LinuwuApp(Adw.Application):
         footer.append(status)
         vbox.append(footer)
 
+        # Global actions
+        act_about = Gio.SimpleAction.new("about", None)
+        def _on_about(_a, _p):
+            about = Adw.AboutWindow(
+                application=self,
+                application_name="Linuwu Sense",
+                developer_name="Community",
+                version="1.0",
+                comments=(
+                    "GTK4 + libadwaita GUI for Linuwu-Sense.\n"
+                    "Controls keyboard RGB, power profile, and fans via CLI helper."
+                ),
+                license_type=Gtk.License.GPL_3_0_ONLY,
+                website="https://github.com/FelipeFMA/Linuwu-Sense",
+            )
+            about.set_transient_for(win)
+            about.present()
+        act_about.connect("activate", _on_about)
+        self.add_action(act_about)
+
+        act_refresh = Gio.SimpleAction.new("refresh", None)
+        def _on_refresh(_a, _p):
+            try:
+                kb_refresh()
+                power_refresh()
+                fans_refresh()
+                notifier.info("Refreshed status")
+            except Exception as e:
+                notifier.error(f"Refresh failed: {e}")
+        act_refresh.connect("activate", _on_refresh)
+        self.add_action(act_refresh)
+
         win.set_content(vbox)
         win.present()
         notifier.info("Ready")
 
     # Keyboard page
-    def _build_keyboard_page(self, notifier: StatusNotifier) -> Gtk.Widget:
+    def _build_keyboard_page(self, notifier: StatusNotifier) -> tuple[Gtk.Widget, Callable[[], None]]:
         page = Adw.PreferencesPage(title="Keyboard")
 
-        # Group: Per-zone static
-        g_static = Adw.PreferencesGroup(title="Per-zone static colors")
+        # Top-level group that will contain three exclusive sections
+        g_modes = Adw.PreferencesGroup(title="Keyboard mode")
+
+        # Helper to ensure only one section is enabled/expanded at a time
+        def make_exclusive_controller(rows: List[Adw.ExpanderRow]):
+            def on_toggle(changed_row: Adw.ExpanderRow, _pspec=None):
+                if changed_row.get_enable_expansion():
+                    # Disable others
+                    for r in rows:
+                        if r is not changed_row:
+                            if r.get_enable_expansion():
+                                r.set_enable_expansion(False)
+                            if r.get_expanded():
+                                r.set_expanded(False)
+                    # Expand current for convenience
+                    if not changed_row.get_expanded():
+                        changed_row.set_expanded(True)
+                else:
+                    # If user disables active row, collapse it
+                    if changed_row.get_expanded():
+                        changed_row.set_expanded(False)
+            for r in rows:
+                r.connect("notify::enable-expansion", on_toggle)
+
+        # ---------------- Per-zone section ----------------
+        per_row = Adw.ExpanderRow(title="Per-zone static")
+        per_row.set_show_enable_switch(True)
+        per_row.set_enable_expansion(True)  # default active
 
         single_row = Adw.SwitchRow(title="Single color for all zones")
         single_row.set_active(True)
-        g_static.add(single_row)
+        per_row.add_row(single_row)
 
         single_color = Adw.EntryRow(title="Color (RRGGBB)")
         single_color.set_text("00aaff")
-        g_static.add(single_color)
+        per_row.add_row(single_color)
 
         # Zone rows
         z_entries: List[Adw.EntryRow] = []
         for i in range(4):
             er = Adw.EntryRow(title=f"Zone {i+1} (RRGGBB)")
-            er.set_text("00aaff" if i == 0 else "00aaff")
-            er.set_sensitive(False)  # start disabled when single color on
+            er.set_text("00aaff")
+            er.set_sensitive(False)  # disabled when single color on
             z_entries.append(er)
-            g_static.add(er)
+            per_row.add_row(er)
 
         def on_single_toggled(_row, _pspec=None):
             use_single = single_row.get_active()
@@ -190,20 +341,18 @@ class LinuwuApp(Adw.Application):
         single_row.connect("notify::active", on_single_toggled)
 
         bright_row = Adw.SpinRow(title="Brightness", adjustment=Gtk.Adjustment(lower=0, upper=100, step_increment=1, page_increment=10, value=100))
-        g_static.add(bright_row)
+        per_row.add_row(bright_row)
 
-        btn_apply_static = Gtk.Button(label="Apply static")
-        btn_apply_static.add_css_class("suggested-action")
-        btn_apply_static.set_halign(Gtk.Align.START)
-        btn_apply_static.set_margin_top(6)
-        btn_apply_static.set_margin_bottom(6)
-        btn_apply_static.set_margin_start(12)
+        # Debounced instant apply for Per-zone (trailing-edge without source_remove warnings)
+        per_zone_timer_id: Optional[int] = None
+        per_zone_last_change: int = 0
+        last_per_zone_args: Optional[str] = None
+        PER_ZONE_DELAY_US = 400_000
 
-        def apply_static(_btn):
+        def _compute_per_zone_args() -> Optional[List[str]]:
+            if not path_exists(ctl.KB_PER_ZONE):
+                return None
             try:
-                if not path_exists(ctl.KB_PER_ZONE):
-                    raise FileNotFoundError(f"Missing per_zone_mode at {ctl.KB_PER_ZONE}")
-
                 brightness = int(bright_row.get_value())
                 if single_row.get_active():
                     c = parse_hex_color(single_color.get_text())
@@ -211,29 +360,46 @@ class LinuwuApp(Adw.Application):
                 else:
                     colors = [parse_hex_color(er.get_text()) for er in z_entries]
                     if len(colors) != 4:
-                        raise ValueError("Provide 4 colors")
-
+                        return None
                 if len(colors) == 1:
                     colors = colors * 4
+                return ["rgb", "per-zone", *colors, "-b", str(brightness)]
+            except Exception:
+                return None
 
-                payload = ",".join(colors + [str(brightness)]) + "\n"
-                write_text(ctl.KB_PER_ZONE, payload)
+        def _apply_per_zone_now():
+            nonlocal last_per_zone_args
+            args = _compute_per_zone_args()
+            if not args:
+                return
+            sig = " ".join(args)
+            if sig == last_per_zone_args:
+                return
+            ok, msg = run_privileged(args)
+            if ok:
                 notifier.info("Keyboard static colors applied")
-            except PermissionError:
-                notifier.error("Permission denied: run as root to apply.")
-            except Exception as e:
-                notifier.error(f"Error: {e}")
+                last_per_zone_args = sig
+            else:
+                notifier.error(msg)
 
-        btn_apply_static.connect("clicked", apply_static)
+        def _per_zone_touch():
+            nonlocal per_zone_timer_id, per_zone_last_change
+            per_zone_last_change = GLib.get_monotonic_time()
+            if per_zone_timer_id is not None:
+                return
+            def _tick():
+                nonlocal per_zone_timer_id
+                if GLib.get_monotonic_time() - per_zone_last_change >= PER_ZONE_DELAY_US:
+                    _apply_per_zone_now()
+                    per_zone_timer_id = None
+                    return False
+                return True
+            per_zone_timer_id = GLib.timeout_add(100, _tick)
 
-        # Add an action row with the apply button
-        row_apply_static = Adw.ActionRow(title="Apply static")
-        row_apply_static.add_suffix(btn_apply_static)
-        row_apply_static.set_activatable_widget(btn_apply_static)
-        g_static.add(row_apply_static)
-
-        # Group: Effect
-        g_effect = Adw.PreferencesGroup(title="Effect (four_zone_mode)")
+        # ---------------- Effect section ----------------
+        eff_row = Adw.ExpanderRow(title="Effect")
+        eff_row.set_show_enable_switch(True)
+        eff_row.set_enable_expansion(False)
 
         # Mode Combo
         mode_names = list(ctl.MODE_NAME_TO_ID.keys())
@@ -241,182 +407,473 @@ class LinuwuApp(Adw.Application):
         mode_row = Adw.ComboRow(title="Mode")
         mode_row.set_model(mode_store)
         mode_row.set_selected(mode_names.index("wave") if "wave" in mode_names else 0)
-        g_effect.add(mode_row)
+        eff_row.add_row(mode_row)
 
         speed_row = Adw.SpinRow(title="Speed", adjustment=Gtk.Adjustment(lower=0, upper=9, step_increment=1, page_increment=1, value=1))
         bright2_row = Adw.SpinRow(title="Brightness", adjustment=Gtk.Adjustment(lower=0, upper=100, step_increment=1, page_increment=10, value=100))
         dir_row = Adw.SpinRow(title="Direction (1-2)", adjustment=Gtk.Adjustment(lower=1, upper=2, step_increment=1, page_increment=1, value=2))
         color_row = Adw.EntryRow(title="Color (optional RRGGBB)")
         color_row.set_text("")
-        g_effect.add(speed_row)
-        g_effect.add(bright2_row)
-        g_effect.add(dir_row)
-        g_effect.add(color_row)
+        eff_row.add_row(speed_row)
+        eff_row.add_row(bright2_row)
+        eff_row.add_row(dir_row)
+        eff_row.add_row(color_row)
 
-        btn_apply_effect = Gtk.Button(label="Apply effect")
-        btn_apply_effect.add_css_class("suggested-action")
-        btn_apply_effect.set_halign(Gtk.Align.START)
-        btn_apply_effect.set_margin_top(6)
-        btn_apply_effect.set_margin_bottom(6)
-        btn_apply_effect.set_margin_start(12)
+        # Debounced instant apply for Effect (trailing-edge)
+        effect_timer_id: Optional[int] = None
+        effect_last_change: int = 0
+        last_effect_args: Optional[str] = None
+        EFFECT_DELAY_US = 400_000
 
-        def apply_effect(_btn):
+        def _compute_effect_args() -> Optional[List[str]]:
+            if not path_exists(ctl.KB_FOUR_MODE):
+                return None
             try:
-                if not path_exists(ctl.KB_FOUR_MODE):
-                    raise FileNotFoundError(f"Missing four_zone_mode at {ctl.KB_FOUR_MODE}")
-
                 mode_name = mode_names[mode_row.get_selected()]
-                mode_id = ctl.MODE_NAME_TO_ID.get(mode_name, 0)
                 speed = int(speed_row.get_value())
                 brightness = int(bright2_row.get_value())
                 direction = int(dir_row.get_value())
-
-                r = g = b = 0
                 ctext = color_row.get_text().strip()
+                args = ["rgb", "effect", str(mode_name), "-s", str(speed), "-b", str(brightness), "-d", str(direction)]
                 if ctext:
-                    col = parse_hex_color(ctext)
-                    r, g, b = int(col[0:2], 16), int(col[2:4], 16), int(col[4:6], 16)
+                    _ = parse_hex_color(ctext)
+                    args += ["-c", ctext]
+                return args
+            except Exception:
+                return None
 
-                payload = ",".join(map(str, [mode_id, speed, brightness, direction, r, g, b])) + "\n"
-                write_text(ctl.KB_FOUR_MODE, payload)
+        def _apply_effect_now():
+            nonlocal last_effect_args
+            args = _compute_effect_args()
+            if not args:
+                return
+            sig = " ".join(args)
+            if sig == last_effect_args:
+                return
+            ok, msg = run_privileged(args)
+            if ok:
                 notifier.info("Keyboard effect applied")
-            except PermissionError:
-                notifier.error("Permission denied: run as root to apply.")
+                last_effect_args = sig
+            else:
+                notifier.error(msg)
+
+        def _effect_touch():
+            nonlocal effect_timer_id, effect_last_change
+            effect_last_change = GLib.get_monotonic_time()
+            if effect_timer_id is not None:
+                return
+            def _tick():
+                nonlocal effect_timer_id
+                if GLib.get_monotonic_time() - effect_last_change >= EFFECT_DELAY_US:
+                    _apply_effect_now()
+                    effect_timer_id = None
+                    return False
+                return True
+            effect_timer_id = GLib.timeout_add(100, _tick)
+
+        # ---------------- Off section ----------------
+        off_row = Adw.ExpanderRow(title="Off")
+        off_row.set_show_enable_switch(True)
+        off_row.set_enable_expansion(False)
+
+        off_hint = Gtk.Label(label="Turn off keyboard backlight (brightness 0)", xalign=0)
+        off_hint.add_css_class("dim-label")
+        off_row.add_row(Adw.ActionRow(title="", subtitle="Sets color to #ffffff and brightness 0"))
+
+        def apply_off():
+            try:
+                # Prefer per-zone with brightness 0
+                colors = ["ffffff"] * 4
+                args = ["rgb", "per-zone", *colors, "-b", "0"]
+                ok, msg = run_privileged(args)
+                if ok:
+                    notifier.info("Keyboard backlight turned off")
+                else:
+                    notifier.error(msg)
             except Exception as e:
                 notifier.error(f"Error: {e}")
 
-        btn_apply_effect.connect("clicked", apply_effect)
+        # Wire instant apply for Off when enabled
 
-        row_apply_effect = Adw.ActionRow(title="Apply effect")
-        row_apply_effect.add_suffix(btn_apply_effect)
-        row_apply_effect.set_activatable_widget(btn_apply_effect)
-        g_effect.add(row_apply_effect)
+        # Add sections to the page and wire exclusivity
+        g_modes.add(per_row)
+        g_modes.add(eff_row)
+        g_modes.add(off_row)
+        page.add(g_modes)
 
-        # Add groups to page
-        page.add(g_static)
-        page.add(g_effect)
-        return page
+        make_exclusive_controller([per_row, eff_row, off_row])
+        # Now wire per-row toggles to trigger applies when enabled
+        per_row.connect("notify::enable-expansion", lambda *_: per_row.get_enable_expansion() and _per_zone_touch())
+        eff_row.connect("notify::enable-expansion", lambda *_: eff_row.get_enable_expansion() and _effect_touch())
+        off_row.connect("notify::enable-expansion", lambda *_: off_row.get_enable_expansion() and apply_off())
+
+        # Utilities: read current values from sysfs and populate UI
+        ID_TO_MODE = {v: k for k, v in ctl.MODE_NAME_TO_ID.items()}
+
+        def _refresh_keyboard() -> None:
+            # Per-zone static
+            try:
+                if path_exists(ctl.KB_PER_ZONE):
+                    raw = read_text(ctl.KB_PER_ZONE)
+                    parts = [p.strip() for p in raw.split(",") if p.strip()]
+                    # Expect 5 parts: c1,c2,c3,c4,brightness
+                    if len(parts) >= 5:
+                        c1, c2, c3, c4 = parts[0], parts[1], parts[2], parts[3]
+                        try:
+                            b = int(parts[4])
+                        except Exception:
+                            b = int(bright_row.get_value())
+                        # Normalize hex colors to rrggbb
+                        cols = []
+                        for c in (c1, c2, c3, c4):
+                            c = c.strip()
+                            if c.startswith("#"):
+                                c = c[1:]
+                            if len(c) == 6:
+                                cols.append(c.lower())
+                        if len(cols) == 4:
+                            # Single color if all equal
+                            all_eq = len(set(cols)) == 1
+                            single_row.set_active(all_eq)
+                            if all_eq:
+                                single_color.set_text(cols[0])
+                            else:
+                                for i, er in enumerate(z_entries):
+                                    er.set_text(cols[i])
+                            # Clamp brightness 0-100
+                            if 0 <= b <= 100:
+                                bright_row.set_value(b)
+            except Exception:
+                pass
+
+            # Effect
+            try:
+                if path_exists(ctl.KB_FOUR_MODE):
+                    raw = read_text(ctl.KB_FOUR_MODE)
+                    parts = [p.strip() for p in raw.split(",") if p.strip()]
+                    # Expect 7 parts: mode,speed,brightness,dir,r,g,b
+                    if len(parts) >= 7:
+                        try:
+                            mid = int(parts[0])
+                            spd = int(parts[1])
+                            brt = int(parts[2])
+                            direc = int(parts[3])
+                            r = int(parts[4])
+                            g = int(parts[5])
+                            b = int(parts[6])
+                        except Exception:
+                            mid = None
+                            spd = int(speed_row.get_value())
+                            brt = int(bright2_row.get_value())
+                            direc = int(dir_row.get_value())
+                            r = g = b = 0
+                        # Mode selection
+                        if isinstance(mid, int) and mid in ID_TO_MODE:
+                            name = ID_TO_MODE[mid]
+                            try:
+                                idx = mode_names.index(name)
+                                mode_row.set_selected(idx)
+                            except ValueError:
+                                pass
+                        # Spinners with validation
+                        if 0 <= spd <= 9:
+                            speed_row.set_value(spd)
+                        if 0 <= brt <= 100:
+                            bright2_row.set_value(brt)
+                        if 1 <= direc <= 2:
+                            dir_row.set_value(direc)
+                        # Optional color
+                        if r == 0 and g == 0 and b == 0:
+                            color_row.set_text("")
+                        else:
+                            hexcol = f"{r:02x}{g:02x}{b:02x}"
+                            color_row.set_text(hexcol)
+            except Exception:
+                pass
+
+            # Ensure sensitivity reflects single/zone selection
+            try:
+                on_single_toggled(single_row)
+            except Exception:
+                pass
+
+            # If current active section is enabled, ensure its state is applied (debounced)
+            try:
+                if per_row.get_enable_expansion():
+                    _per_zone_touch()
+                elif eff_row.get_enable_expansion():
+                    _effect_touch()
+                elif off_row.get_enable_expansion():
+                    apply_off()
+            except Exception:
+                pass
+
+        # Add a manual Refresh button for convenience
+        refresh_group = Adw.PreferencesGroup(title="Sync from device")
+        btn_refresh = Gtk.Button(label="Refresh")
+        btn_refresh.set_halign(Gtk.Align.START)
+        btn_refresh.set_margin_start(12)
+        btn_refresh.connect("clicked", lambda _b: _refresh_keyboard())
+        row_refresh = Adw.ActionRow(title="Read current keyboard state")
+        row_refresh.add_suffix(btn_refresh)
+        row_refresh.set_activatable_widget(btn_refresh)
+        refresh_group.add(row_refresh)
+        page.add(refresh_group)
+
+        # Initial populate
+        _refresh_keyboard()
+
+        # Wire input changes to instant apply in Per-zone section
+        single_row.connect("notify::active", lambda *_: _per_zone_touch())
+        single_color.connect("notify::text", lambda *_: _per_zone_touch())
+        for er in z_entries:
+            er.connect("notify::text", lambda *_: _per_zone_touch())
+        bright_row.connect("notify::value", lambda *_: _per_zone_touch())
+
+        # Wire input changes to instant apply in Effect section
+        mode_row.connect("notify::selected", lambda *_: _effect_touch())
+        speed_row.connect("notify::value", lambda *_: _effect_touch())
+        bright2_row.connect("notify::value", lambda *_: _effect_touch())
+        dir_row.connect("notify::value", lambda *_: _effect_touch())
+        color_row.connect("notify::text", lambda *_: _effect_touch())
+
+        return page, _refresh_keyboard
 
     # Power page
-    def _build_power_page(self, notifier: StatusNotifier) -> Gtk.Widget:
+    def _build_power_page(self, notifier: StatusNotifier) -> tuple[Gtk.Widget, Callable[[], None]]:
         page = Adw.PreferencesPage(title="Power")
         group = Adw.PreferencesGroup(title="Platform profile")
 
-        # Load choices
+        # Store and selector
         choices: List[str] = []
         current = ""
-        if path_exists(ctl.PLATFORM_PROFILE_CHOICES):
-            try:
-                raw = read_text(ctl.PLATFORM_PROFILE_CHOICES)
-                choices = [c for c in raw.split() if c]
-            except Exception:
-                choices = []
-        if not choices:
-            # Reasonable defaults
-            choices = ["balanced", "performance", "power-saver"]
-
-        try:
-            if path_exists(ctl.PLATFORM_PROFILE):
-                current = read_text(ctl.PLATFORM_PROFILE)
-        except Exception:
-            current = ""
-
-        store = Gtk.StringList.new(choices)
+        store = Gtk.StringList.new([])
         combo = Adw.ComboRow(title="Profile")
         combo.set_model(store)
-        if current in choices:
-            combo.set_selected(choices.index(current))
         group.add(combo)
 
-        btn_apply = Gtk.Button(label="Apply profile")
-        btn_apply.add_css_class("suggested-action")
-        btn_apply.set_halign(Gtk.Align.START)
-        btn_apply.set_margin_top(6)
-        btn_apply.set_margin_bottom(6)
-        btn_apply.set_margin_start(12)
+        current_label = Gtk.Label(xalign=0)
+        current_label.add_css_class("dim-label")
+        row_current = Adw.ActionRow(title="Current profile")
+        row_current.add_suffix(current_label)
+        group.add(row_current)
 
-        def apply_profile(_btn):
+        def refresh() -> None:
+            nonlocal choices, current
+            ok_list, list_out = run_privileged(["power", "list"])
+            if ok_list and list_out:
+                try:
+                    choices = [c for c in list_out.split() if c]
+                except Exception:
+                    choices = []
+            else:
+                choices = ["balanced", "performance", "power-saver"]
+            store.splice(0, store.get_n_items(), choices)
+            ok_cur, cur_out = run_privileged(["power", "get"])
+            current = cur_out if ok_cur and cur_out else ""
+            current_label.set_text(current or "unknown")
+            if current in choices:
+                combo.set_selected(choices.index(current))
+            elif choices:
+                combo.set_selected(0)
+
+        # Instant apply on selection changes with guard during refresh
+        power_refreshing = False
+
+        def _apply_power_from_combo():
+            nonlocal power_refreshing
+            if power_refreshing:
+                return
             try:
-                if not path_exists(ctl.PLATFORM_PROFILE):
-                    raise FileNotFoundError(f"Missing {ctl.PLATFORM_PROFILE}")
-                sel = choices[combo.get_selected()] if choices else None
+                sel = choices[combo.get_selected()] if choices and combo.get_selected() >= 0 else None
                 if not sel:
-                    raise ValueError("No profile selected")
-                write_text(ctl.PLATFORM_PROFILE, sel + "\n")
-                notifier.info(f"Power profile set to {sel}")
-            except PermissionError:
-                notifier.error("Permission denied: run as root to apply.")
+                    return
+                ok, msg = run_privileged(["power", "set", sel])
+                if ok:
+                    notifier.info(f"Power profile set to {sel}")
+                else:
+                    notifier.error(msg)
             except Exception as e:
                 notifier.error(f"Error: {e}")
+        combo.connect("notify::selected", lambda *_: _apply_power_from_combo())
 
-        btn_apply.connect("clicked", apply_profile)
-
-        row_apply = Adw.ActionRow(title="Apply profile")
-        row_apply.add_suffix(btn_apply)
-        row_apply.set_activatable_widget(btn_apply)
-        group.add(row_apply)
+        btn_refresh = Gtk.Button(label="Refresh")
+        btn_refresh.set_halign(Gtk.Align.START)
+        btn_refresh.set_margin_start(12)
+        btn_refresh.connect("clicked", lambda _b: refresh())
+        row_refresh = Adw.ActionRow(title="Refresh choices/current")
+        row_refresh.add_suffix(btn_refresh)
+        row_refresh.set_activatable_widget(btn_refresh)
+        group.add(row_refresh)
 
         page.add(group)
-        return page
+        # Wrap original refresh to set guard
+        def _wrapped_refresh():
+            nonlocal power_refreshing
+            power_refreshing = True
+            try:
+                refresh()
+            finally:
+                power_refreshing = False
+        _wrapped_refresh()
+        return page, _wrapped_refresh
 
     # Fans page
-    def _build_fans_page(self, notifier: StatusNotifier) -> Gtk.Widget:
+    def _build_fans_page(self, notifier: StatusNotifier) -> tuple[Gtk.Widget, Callable[[], None]]:
         page = Adw.PreferencesPage(title="Fans")
         group = Adw.PreferencesGroup(title="Manual control")
 
-        auto_row = Adw.SwitchRow(title="Auto (both fans)")
-        auto_row.set_active(False)
-        group.add(auto_row)
+        link_row = Adw.SwitchRow(title="Link CPU and GPU values")
+        link_row.set_active(False)
+        group.add(link_row)
 
-        cpu_row = Adw.SpinRow(title="CPU %", adjustment=Gtk.Adjustment(lower=0, upper=100, step_increment=1, page_increment=10, value=0))
-        gpu_row = Adw.SpinRow(title="GPU %", adjustment=Gtk.Adjustment(lower=0, upper=100, step_increment=1, page_increment=10, value=0))
+        cpu_auto = Adw.SwitchRow(title="CPU: Auto")
+        cpu_auto.set_active(True)
+        cpu_row = Adw.SpinRow(title="CPU: Percent", adjustment=Gtk.Adjustment(lower=1, upper=100, step_increment=1, page_increment=10, value=50))
+        group.add(cpu_auto)
         group.add(cpu_row)
+
+        gpu_auto = Adw.SwitchRow(title="GPU: Auto")
+        gpu_auto.set_active(True)
+        gpu_row = Adw.SpinRow(title="GPU: Percent", adjustment=Gtk.Adjustment(lower=1, upper=100, step_increment=1, page_increment=10, value=50))
+        group.add(gpu_auto)
         group.add(gpu_row)
 
-        def on_auto_changed(_row, _pspec=None):
-            is_auto = auto_row.get_active()
-            cpu_row.set_sensitive(not is_auto)
-            gpu_row.set_sensitive(not is_auto)
+        def _sync_sensitivity():
+            cpu_row.set_sensitive(not cpu_auto.get_active())
+            gpu_row.set_sensitive(not gpu_auto.get_active())
 
-        auto_row.connect("notify::active", on_auto_changed)
+        def _sync_linked_visibility():
+            linked = link_row.get_active()
+            # Hide GPU controls when linked and retitle CPU as Both
+            gpu_auto.set_visible(not linked)
+            gpu_row.set_visible(not linked)
+            cpu_auto.set_title("Both: Auto" if linked else "CPU: Auto")
+            cpu_row.set_title("Both: Percent" if linked else "CPU: Percent")
 
-        btn_apply = Gtk.Button(label="Apply fan settings")
-        btn_apply.add_css_class("suggested-action")
-        btn_apply.set_halign(Gtk.Align.START)
-        btn_apply.set_margin_top(6)
-        btn_apply.set_margin_bottom(6)
-        btn_apply.set_margin_start(12)
+        def _maybe_link_from_cpu():
+            if link_row.get_active():
+                gpu_auto.set_active(cpu_auto.get_active())
+                if not cpu_auto.get_active():
+                    gpu_row.set_value(cpu_row.get_value())
+            _sync_sensitivity()
 
-        def apply_fans(_btn):
+        def _maybe_link_from_gpu():
+            if link_row.get_active():
+                cpu_auto.set_active(gpu_auto.get_active())
+                if not gpu_auto.get_active():
+                    cpu_row.set_value(gpu_row.get_value())
+            _sync_sensitivity()
+
+        cpu_auto.connect("notify::active", lambda *_: (_maybe_link_from_cpu(), _sync_linked_visibility()))
+        gpu_auto.connect("notify::active", lambda *_: (_maybe_link_from_gpu(), _sync_linked_visibility()))
+        def _on_link_toggle(*_):
+            _maybe_link_from_cpu()
+            _sync_linked_visibility()
+        link_row.connect("notify::active", _on_link_toggle)
+        cpu_row.connect("notify::value", lambda *_: (_maybe_link_from_cpu(), _sync_linked_visibility()))
+        gpu_row.connect("notify::value", lambda *_: (_maybe_link_from_gpu(), _sync_linked_visibility()))
+
+        _sync_sensitivity()
+        _sync_linked_visibility()
+
+        # Removed redundant "Set both to Auto" button to reduce clutter (Auto toggles already handle this)
+
+        # Instant apply for fan changes (debounced) with refresh guard
+        fans_debounce_id: Optional[int] = None
+        fans_refreshing = False
+
+        def _compute_fans_args() -> Optional[List[str]]:
             try:
+                if cpu_auto.get_active() and gpu_auto.get_active():
+                    return ["fan", "auto"]
+                cpuv = "auto" if cpu_auto.get_active() else str(int(cpu_row.get_value()))
+                gpuv = "auto" if gpu_auto.get_active() else str(int(gpu_row.get_value()))
+                return ["fan", "set", "--cpu", cpuv, "--gpu", gpuv]
+            except Exception:
+                return None
+
+        def _apply_fans_now():
+            if fans_refreshing:
+                return
+            args = _compute_fans_args()
+            if not args:
+                return
+            ok, msg = run_privileged(args)
+            if ok:
+                notifier.info("Fan settings applied")
+                refresh()
+            else:
+                notifier.error(msg)
+
+        def _schedule_apply_fans():
+            nonlocal fans_debounce_id
+            if fans_refreshing:
+                return
+            if fans_debounce_id is not None:
+                try:
+                    GLib.source_remove(fans_debounce_id)
+                except Exception:
+                    pass
+                fans_debounce_id = None
+            def _timeout():
+                _apply_fans_now()
+                return False
+            fans_debounce_id = GLib.timeout_add(400, _timeout)
+
+        status_label = Gtk.Label(xalign=0)
+        status_label.add_css_class("dim-label")
+        row_status = Adw.ActionRow(title="Current values (CPU, GPU)")
+        row_status.add_suffix(status_label)
+        group.add(row_status)
+
+        def refresh() -> None:
+            try:
+                nonlocal fans_refreshing
+                fans_refreshing = True
                 p = detect_sense_fan_path()
                 if not p:
-                    raise FileNotFoundError("fan_speed path not found (is the module loaded?)")
-                if auto_row.get_active():
-                    payload = "0,0\n"  # auto
+                    status_label.set_text("unavailable")
+                    return
+                raw = read_text(p)
+                parts = [s.strip() for s in raw.replace("\n", "").split(",") if s.strip()]
+                if len(parts) >= 2:
+                    c = int(parts[0])
+                    g = int(parts[1])
+                    status_label.set_text(f"{c},{g}")
+                    cpu_auto.set_active(c == 0)
+                    gpu_auto.set_active(g == 0)
+                    if c > 0:
+                        cpu_row.set_value(c)
+                    if g > 0:
+                        gpu_row.set_value(g)
+                    _sync_sensitivity()
+                    _sync_linked_visibility()
                 else:
-                    cpu = int(cpu_row.get_value())
-                    gpu = int(gpu_row.get_value())
-                    if not (0 <= cpu <= 100 and 0 <= gpu <= 100):
-                        raise ValueError("Percentages must be 0-100")
-                    # 0 is auto; use at your own risk. Here we treat 0 as auto if chosen.
-                    payload = f"{cpu},{gpu}\n"
-                write_text(p, payload)
-                notifier.info("Fan settings applied")
-            except PermissionError:
-                notifier.error("Permission denied: run as root to apply.")
+                    status_label.set_text(raw)
             except Exception as e:
-                notifier.error(f"Error: {e}")
+                status_label.set_text(f"Error: {e}")
+            finally:
+                fans_refreshing = False
 
-        btn_apply.connect("clicked", apply_fans)
+        btn_refresh = Gtk.Button(label="Refresh")
+        btn_refresh.set_halign(Gtk.Align.START)
+        btn_refresh.set_margin_start(12)
+        btn_refresh.connect("clicked", lambda _b: refresh())
+        row_refresh = Adw.ActionRow(title="Refresh current")
+        row_refresh.add_suffix(btn_refresh)
+        row_refresh.set_activatable_widget(btn_refresh)
+        group.add(row_refresh)
 
-        row_apply = Adw.ActionRow(title="Apply fan settings")
-        row_apply.add_suffix(btn_apply)
-        row_apply.set_activatable_widget(btn_apply)
-        group.add(row_apply)
+        # Wire change events for instant apply
+        cpu_auto.connect("notify::active", lambda *_: _schedule_apply_fans())
+        gpu_auto.connect("notify::active", lambda *_: _schedule_apply_fans())
+        cpu_row.connect("notify::value", lambda *_: _schedule_apply_fans())
+        gpu_row.connect("notify::value", lambda *_: _schedule_apply_fans())
 
         page.add(group)
-        return page
+        refresh()
+        return page, refresh
 
 
 def main(argv: Optional[List[str]] = None) -> int:
