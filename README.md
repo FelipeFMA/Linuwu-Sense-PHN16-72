@@ -2,9 +2,15 @@
 
 This repository is a hardware-specific fork of the original Linuwu-Sense driver. It contains changes developed and tested on the Acer Predator PHN16-72 and may not work on other models or hardware revisions.
 
+Important support and OS scope
+
+- No support is provided. Please do not open issues or ask for help — they will PROBABLY not be answered.
+- Tested only on Arch Linux. It will probably work on most mainstream Linux distributions with standard kernels and headers, but this is not guaranteed.
+
 Important notes
 
 - Tested only on: Acer Predator PHN16-72.
+- OS compatibility: Developed and validated on Arch Linux only; other distros are untested. Likely compatible with common Linux distributions, but you are on your own.
 - The driver uses low-level WMI/ACPI interfaces. On other hardware it may fail to load or behave unpredictably.
 - Use at your own risk. The author is not responsible for hardware damage or data loss.
 
@@ -86,7 +92,17 @@ export LD=ld.lld
   sudo make LLVM=1 install
   ```
 
-If issues persist, please open an issue with your distro, kernel version (`uname -a`), and full build log.
+If issues persist, you are on your own. No support is provided for this fork and bug reports probably won't receive a response. Consult your distro documentation, upstream resources, or debug locally at your own risk.
+
+## Contributions
+
+Pull requests are welcome if they:
+
+- Target exactly the same hardware: Acer Predator PHN16-72 (this fork’s focus).
+- Keep the scope minimal and avoid unnecessary bloat or broad, untested feature additions.
+- Maintain existing behavior for this model and do not introduce cross-model abstractions without clear benefit here.
+
+PRs that add generic features for other models, or introduce complexity without a direct need for PHN16-72, will likely be declined.
 
 What the module exposes
 
