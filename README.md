@@ -27,6 +27,67 @@ To remove the installed module:
 make uninstall
 ```
 
+## Build toolchain note (Clang vs GCC)
+
+Many distributions (e.g., CachyOS) build their kernels with Clang/LLVM. When your running kernel is built with Clang, trying to build this out-of-tree module with GCC can fail with errors like:
+
+- `gcc: error: unrecognized command-line option ‘-mretpoline-external-thunk’`
+- `gcc: error: unrecognized command-line option ‘-fsplit-lto-unit’`
+- `gcc: error: unrecognized command-line option ‘-mllvm’`
+
+In that case, rebuild using the kernel’s LLVM toolchain:
+
+```bash
+# Build with Clang/LLVM to match the kernel toolchain
+make LLVM=1
+sudo make LLVM=1 install
+```
+
+Alternatively, you can export the variables once for your shell/session:
+
+```bash
+export LLVM=1
+# Optionally make it explicit:
+export CC=clang
+export LD=ld.lld
+```
+
+## Troubleshooting
+
+- Missing headers: ensure kernel headers for your exact running kernel are installed.
+  - Arch/CachyOS: `sudo pacman -S linux-headers` (or your kernel flavor’s headers)
+  - Debian/Ubuntu: `sudo apt install linux-headers-"$(uname -r)"`
+
+- GCC vs Clang flags: if you see GCC complaining about unknown `-mllvm`, `-fsplit-lto-unit`, or similar flags, rebuild with `LLVM=1` as shown above.
+
+- Operation not permitted in `src/`: if you see errors like `unable to open output file 'src/linuwu_sense.o': Operation not permitted`, it usually means there are root-owned or protected build artifacts in the repo (from a previous sudo build) or immutable attributes.
+  - Fix ownership and clean:
+    ```bash
+    sudo chown -R "$USER":"$USER" /path/to/Linuwu-Sense-PHN16-72
+    make clean
+    ```
+  - If files are immutable, clear the flag (rare):
+    ```bash
+    lsattr -R src
+    # If you see an 'i' attribute, remove it then clean
+    sudo chattr -i src/*
+    make clean
+    ```
+  - Prefer compiling as your user and using `sudo` only for the install step:
+    ```bash
+    make LLVM=1
+    sudo make LLVM=1 install
+    ```
+
+- Module conflicts: the install target tries to remove the stock `acer_wmi` and load this module. If you still see conflicts, unload related modules before installing:
+  ```bash
+  sudo modprobe -r acer_wmi
+  sudo modprobe -r wmi
+  sudo make LLVM=1 install
+  ```
+
+If issues persist, please open an issue with your distro, kernel version (`uname -a`), and full build log.
+
 What the module exposes
 
 The module creates sysfs entries that provide control over platform-specific features when supported by the firmware, for example:
