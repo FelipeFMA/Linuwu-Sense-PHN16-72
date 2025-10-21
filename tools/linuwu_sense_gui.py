@@ -767,6 +767,9 @@ class LinuwuApp(Adw.Application):
         link_row.set_active(False)
         group.add(link_row)
 
+        # One-time auto-link: if current CPU and GPU values are equal on first load
+        link_initialized = False
+
         cpu_auto = Adw.SwitchRow(title="CPU: Auto")
         cpu_auto.set_active(True)
         cpu_row = Adw.SpinRow(title="CPU: Percent", adjustment=Gtk.Adjustment(lower=1, upper=100, step_increment=1, page_increment=10, value=50))
@@ -860,7 +863,6 @@ class LinuwuApp(Adw.Application):
                 _apply_fans_now()
                 return False
             fans_debounce_id = GLib.timeout_add(400, _timeout)
-
         status_label = Gtk.Label(xalign=0)
         status_label.add_css_class("dim-label")
         row_status = Adw.ActionRow(title="Current values (CPU, GPU)")
@@ -869,7 +871,7 @@ class LinuwuApp(Adw.Application):
 
         def refresh() -> None:
             try:
-                nonlocal fans_refreshing
+                nonlocal fans_refreshing, link_initialized
                 fans_refreshing = True
                 p = detect_sense_fan_path()
                 if not p:
@@ -887,6 +889,11 @@ class LinuwuApp(Adw.Application):
                         cpu_row.set_value(c)
                     if g > 0:
                         gpu_row.set_value(g)
+                    # On first load, auto-enable link if CPU and GPU values match
+                    if not link_initialized:
+                        if c == g:
+                            link_row.set_active(True)
+                        link_initialized = True
                     _sync_sensitivity()
                     _sync_linked_visibility()
                 else:
