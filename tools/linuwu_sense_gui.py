@@ -28,6 +28,7 @@ import os
 import sys
 from typing import List, Optional, Callable
 import subprocess
+import threading
 import shutil
 
 try:
@@ -115,6 +116,21 @@ def run_privileged(args: List[str]) -> tuple[bool, str]:
         return False, msg
     msg = err or out or f"Failed with code {code}"
     return False, msg
+
+
+def run_privileged_async(args: List[str], on_done: Callable[[bool, str], None]) -> None:
+    """
+    Run the CLI helper without blocking the GTK main loop. Executes in a
+    background thread and dispatches the (ok, msg) result back on the main
+    thread via GLib.idle_add.
+
+    on_done: callable taking (ok: bool, msg: str)
+    """
+    def _worker():
+        ok, msg = run_privileged(args)
+        # Ensure UI updates happen on the main thread
+        GLib.idle_add(on_done, ok, msg)
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 def path_exists(p: str) -> bool:
@@ -375,12 +391,14 @@ class LinuwuApp(Adw.Application):
             sig = " ".join(args)
             if sig == last_per_zone_args:
                 return
-            ok, msg = run_privileged(args)
-            if ok:
-                notifier.info("Keyboard static colors applied")
-                last_per_zone_args = sig
-            else:
-                notifier.error(msg)
+            def _done(ok: bool, msg: str):
+                nonlocal last_per_zone_args
+                if ok:
+                    notifier.info("Keyboard static colors applied")
+                    last_per_zone_args = sig
+                else:
+                    notifier.error(msg)
+            run_privileged_async(args, _done)
 
         def _per_zone_touch():
             nonlocal per_zone_timer_id, per_zone_last_change
@@ -450,12 +468,14 @@ class LinuwuApp(Adw.Application):
             sig = " ".join(args)
             if sig == last_effect_args:
                 return
-            ok, msg = run_privileged(args)
-            if ok:
-                notifier.info("Keyboard effect applied")
-                last_effect_args = sig
-            else:
-                notifier.error(msg)
+            def _done(ok: bool, msg: str):
+                nonlocal last_effect_args
+                if ok:
+                    notifier.info("Keyboard effect applied")
+                    last_effect_args = sig
+                else:
+                    notifier.error(msg)
+            run_privileged_async(args, _done)
 
         def _effect_touch():
             nonlocal effect_timer_id, effect_last_change
@@ -485,11 +505,12 @@ class LinuwuApp(Adw.Application):
                 # Prefer per-zone with brightness 0
                 colors = ["ffffff"] * 4
                 args = ["rgb", "per-zone", *colors, "-b", "0"]
-                ok, msg = run_privileged(args)
-                if ok:
-                    notifier.info("Keyboard backlight turned off")
-                else:
-                    notifier.error(msg)
+                def _done(ok: bool, msg: str):
+                    if ok:
+                        notifier.info("Keyboard backlight turned off")
+                    else:
+                        notifier.error(msg)
+                run_privileged_async(args, _done)
             except Exception as e:
                 notifier.error(f"Error: {e}")
 
@@ -709,11 +730,12 @@ class LinuwuApp(Adw.Application):
                 sel = choices[combo.get_selected()] if choices and combo.get_selected() >= 0 else None
                 if not sel:
                     return
-                ok, msg = run_privileged(["power", "set", sel])
-                if ok:
-                    notifier.info(f"Power profile set to {sel}")
-                else:
-                    notifier.error(msg)
+                def _done(ok: bool, msg: str):
+                    if ok:
+                        notifier.info(f"Power profile set to {sel}")
+                    else:
+                        notifier.error(msg)
+                run_privileged_async(["power", "set", sel], _done)
             except Exception as e:
                 notifier.error(f"Error: {e}")
         combo.connect("notify::selected", lambda *_: _apply_power_from_combo())
@@ -723,18 +745,20 @@ class LinuwuApp(Adw.Application):
             if power_refreshing:
                 return
             val = battery_row.get_active()
-            ok, msg = run_privileged(["battery", "on" if val else "off"])
-            if ok:
-                notifier.info("Battery limit enabled" if val else "Battery limit disabled")
-            else:
-                notifier.error(msg)
-                # Revert switch on failure without re-triggering
-                prev = power_refreshing
-                power_refreshing = True
-                try:
-                    battery_row.set_active(not val)
-                finally:
-                    power_refreshing = prev
+            def _done(ok: bool, msg: str):
+                nonlocal power_refreshing
+                if ok:
+                    notifier.info("Battery limit enabled" if val else "Battery limit disabled")
+                else:
+                    notifier.error(msg)
+                    # Revert switch on failure without re-triggering
+                    prev = power_refreshing
+                    power_refreshing = True
+                    try:
+                        battery_row.set_active(not val)
+                    finally:
+                        power_refreshing = prev
+            run_privileged_async(["battery", "on" if val else "off"], _done)
         battery_row.connect("notify::active", _on_battery_toggle)
 
         btn_refresh = Gtk.Button(label="Refresh")
@@ -842,12 +866,13 @@ class LinuwuApp(Adw.Application):
             args = _compute_fans_args()
             if not args:
                 return
-            ok, msg = run_privileged(args)
-            if ok:
-                notifier.info("Fan settings applied")
-                refresh()
-            else:
-                notifier.error(msg)
+            def _done(ok: bool, msg: str):
+                if ok:
+                    notifier.info("Fan settings applied")
+                    refresh()
+                else:
+                    notifier.error(msg)
+            run_privileged_async(args, _done)
 
         def _schedule_apply_fans():
             nonlocal fans_debounce_id
