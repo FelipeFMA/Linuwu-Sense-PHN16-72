@@ -217,14 +217,32 @@ class LinuwuApp(Adw.Application):
         stack = Adw.ViewStack()
         # Title switcher in header
         switcher_title = Adw.ViewSwitcherTitle()
+        # Avoid deprecated set_stack(); prefer setting the property directly
         try:
-            switcher_title.set_stack(stack)
+            switcher_title.props.stack = stack
         except Exception:
-            pass
+            try:
+                switcher_title.set_property("stack", stack)
+            except Exception:
+                # Fallback for older libadwaita versions
+                try:
+                    switcher_title.set_stack(stack)
+                except Exception:
+                    pass
         header.set_title_widget(switcher_title)
         # Small screens: bottom bar
         switcher = Adw.ViewSwitcherBar()
-        switcher.set_stack(stack)
+        # Avoid deprecated set_stack(); set property instead
+        try:
+            switcher.props.stack = stack
+        except Exception:
+            try:
+                switcher.set_property("stack", stack)
+            except Exception:
+                try:
+                    switcher.set_stack(stack)
+                except Exception:
+                    pass
 
         keyboard, kb_refresh = self._build_keyboard_page(notifier)
         power, power_refresh = self._build_power_page(notifier)
