@@ -1,0 +1,34 @@
+# Ignore kernel/module build artifacts and generated files
+# Module build helper files
+.module-common.o
+.Module.symvers.cmd
+.module-common.o
+.modules.order.cmd
+Module.symvers
+modules.order
+
+# Build artifacts in src
+src/.linuwu_sense.ko.cmd
+src/.linuwu_sense.mod.cmd
+src/.linuwu_sense.mod.o.cmd
+src/.linuwu_sense.o.cmd
+src/linuwu_sense.ko
+src/linuwu_sense.mod
+src/linuwu_sense.mod.c
+src/linuwu_sense.mod.o
+src/linuwu_sense.o
+
+# Python compiled/cache
+__pycache__/
+tools/__pycache__/
+
+# Service/runtime files
+*.service
+
+# Makefile generated files
+*.cmd
+
+# Local editor/temp files
+*~
+.vscode/
+.idea/
