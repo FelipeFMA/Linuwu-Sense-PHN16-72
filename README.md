@@ -135,6 +135,29 @@ Tools and CLI helper
 
 There is a helper script at `tools/linuwuctl.py` that performs common sysfs reads/writes and validates input formats. Root privileges are required for writes.
 
+### GUI (GTK4 + libadwaita)
+
+A simple GUI is available at `tools/linuwu_sense_gui.py`.
+
+Run it with Python 3 (you may need to install `python3-gi` and libadwaita bindings on your distro):
+
+```bash
+python3 tools/linuwu_sense_gui.py
+```
+
+You can start the GUI directly on a specific page using these flags:
+
+- `-k` / `--keyboard` — open on the Keyboard page (default)
+- `-p` / `--power` — open on the Power page
+- `-f` / `--fans` — open on the Fans page
+
+Examples:
+
+```bash
+python3 tools/linuwu_sense_gui.py --power
+python3 tools/linuwu_sense_gui.py -f
+```
+
 Battery limiter (80%)
 
 On supported machines the driver exposes a `battery_limiter` sysfs attribute (1=limit to ~80%, 0=full charge). The CLI provides convenient wrappers:

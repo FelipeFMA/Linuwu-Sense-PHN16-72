@@ -184,10 +184,12 @@ class StatusNotifier:
 
 
 class LinuwuApp(Adw.Application):
-    def __init__(self):
+    def __init__(self, initial_page: str = "keyboard"):
         super().__init__(application_id="org.example.LinuwuSense", flags=Gio.ApplicationFlags.FLAGS_NONE)
         # Follow system appearance; DEFAULT maps to system preference in libadwaita.
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.DEFAULT)
+        # Which page to show first ("keyboard", "power", or "fans")
+        self._initial_page = initial_page
 
     def do_activate(self):
         if self.props.active_window:
@@ -256,6 +258,13 @@ class LinuwuApp(Adw.Application):
             kb_page.set_icon_name("keyboard-brightness-symbolic")
             power_page.set_icon_name("power-profile-performance-symbolic")
             fans_page.set_icon_name("weather-windy-symbolic")
+        except Exception:
+            pass
+
+        # Select initial page if requested
+        try:
+            if self._initial_page in ("keyboard", "power", "fans"):
+                stack.set_visible_child_name(self._initial_page)
         except Exception:
             pass
 
@@ -967,8 +976,27 @@ class LinuwuApp(Adw.Application):
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    app = LinuwuApp()
-    return app.run(argv or sys.argv)
+    # Parse our CLI flags first and pass through unknowns to GTK/GApplication
+    import argparse
+    argv = argv or sys.argv
+    parser = argparse.ArgumentParser(add_help=True, prog=os.path.basename(argv[0]))
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("-k", "--keyboard", action="store_true", help="Open on the Keyboard page")
+    group.add_argument("-p", "--power", action="store_true", help="Open on the Power page")
+    group.add_argument("-f", "--fans", action="store_true", help="Open on the Fans page")
+    args, unknown = parser.parse_known_args(argv[1:])
+
+    initial_page = "keyboard"
+    if args.power:
+        initial_page = "power"
+    elif args.fans:
+        initial_page = "fans"
+    elif args.keyboard:
+        initial_page = "keyboard"
+
+    app = LinuwuApp(initial_page=initial_page)
+    # Pass only unknown args to GApplication to avoid clashing with our flags
+    return app.run([argv[0], *unknown])
 
 
 if __name__ == "__main__":
