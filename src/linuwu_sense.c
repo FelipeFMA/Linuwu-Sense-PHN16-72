@@ -3704,7 +3704,6 @@ static acpi_status set_logo_status(int enable, int brightness, int effect,
             2,           /* select LB */
             0, 0, 0, 0, 0, 0
         };
-        union acpi_object *o = NULL;
         struct acpi_buffer out = { ACPI_ALLOCATE_BUFFER, NULL };
         struct acpi_buffer in = { (acpi_size)sizeof(bhlk), (void *)(bhlk) };
         acpi_status st = wmi_evaluate_method(WMID_GUID4, 0, ACER_WMID_SET_GAMING_KB_BACKLIGHT_METHODID, &in, &out);
