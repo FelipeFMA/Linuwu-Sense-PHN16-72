@@ -28,6 +28,9 @@ SYSFS_BASE = "/sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi"
 KB_PER_ZONE = os.path.join(SYSFS_BASE, "four_zoned_kb/per_zone_mode")
 KB_FOUR_MODE = os.path.join(SYSFS_BASE, "four_zoned_kb/four_zone_mode")
 
+# Back logo/lightbar
+LOGO_COLOR = os.path.join(SYSFS_BASE, "back_logo/color")
+
 SENSE_PRED = os.path.join(SYSFS_BASE, "predator_sense")
 SENSE_NITRO = os.path.join(SYSFS_BASE, "nitro_sense")
 
@@ -214,6 +217,30 @@ def cmd_power_set(args: argparse.Namespace) -> None:
     print("OK: power profile set")
 
 
+def cmd_logo_get(_: argparse.Namespace) -> None:
+    _require_path(LOGO_COLOR, "back_logo/color")
+    # Format: RRGGBB,brightness,enable
+    v = _read_text(LOGO_COLOR)
+    print(v)
+
+
+def cmd_logo_set(args: argparse.Namespace) -> None:
+    _require_path(LOGO_COLOR, "back_logo/color")
+    color = _parse_hex_color(args.color)
+    b = args.brightness
+    if b is None:
+        b = 100
+    if not (0 <= b <= 100):
+        raise SystemExit("Brightness must be 0-100")
+    en = 1
+    if getattr(args, "on", False):
+        en = 1
+    if getattr(args, "off", False):
+        en = 0
+    _write_text(LOGO_COLOR, f"{color},{b},{en}\n")
+    print("OK: back logo updated")
+
+
 def _fan_path() -> str:
     sense = _detect_sense_dir()
     if not sense:
@@ -369,6 +396,25 @@ def build_parser() -> argparse.ArgumentParser:
             return
         cmd_power_set(a)
     pset.set_defaults(func=_power_set_wrapper)
+
+    # logo
+    logo = sub.add_parser("logo", help="Back logo/lightbar controls (PHN16-72)")
+    logo.set_defaults(func=lambda _args, _parser=logo: _parser.print_help())
+    logo_sub = logo.add_subparsers(dest="logo_cmd")
+
+    lget = logo_sub.add_parser("get", help="Print current color,brightness,enable")
+    lget.set_defaults(func=cmd_logo_get)
+
+    lset = logo_sub.add_parser("set", help="Set color and optional brightness/on|off")
+    lset.add_argument("color", help="RRGGBB color or #RRGGBB")
+    lset.add_argument("-b", "--brightness", type=int, default=100, help="Brightness 0-100")
+    lset.add_argument("--on", action="store_true", help="Enable logo explicitly")
+    lset.add_argument("--off", action="store_true", help="Disable logo explicitly")
+    def _logo_set_wrapper(a: argparse.Namespace):
+        if a.on and a.off:
+            raise SystemExit("Choose either --on or --off, not both")
+        cmd_logo_set(a)
+    lset.set_defaults(func=_logo_set_wrapper)
 
     # fan
     fan = sub.add_parser("fan", help="Fan control")
