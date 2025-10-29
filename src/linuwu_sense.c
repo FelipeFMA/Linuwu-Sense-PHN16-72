@@ -3682,47 +3682,9 @@ enum acer_wmi_predator_v4_oc {
 static acpi_status set_logo_status(int enable, int brightness, int effect,
                                    int red, int green, int blue)
 {
-    /* Step 1: Set enable/brightness/effect via unified setter (Arg1=0x14) targeting LB */
+    /* Set logo RGB + brightness + enable using Arg1=0x0C (LBLR/LBLG/LBLB/LBLT/LBLF) */
     {
-        u8 bhlk[16] = {
-            (u8)enable, /* LBLE */
-            0,           /* LBLS speed */
-            (u8)brightness, /* LBBP */
-            0,           /* reserved */
-            (u8)effect,  /* LBED */
-            0, 0, 0,     /* do not set LBCR/LBCG/LBCB here */
-            0,           /* LLES */
-            2,           /* select LB (2) */
-            0, 0, 0, 0, 0, 0
-        };
-        acpi_status st;
-        union acpi_object *o = NULL;
-        struct acpi_buffer out = { ACPI_ALLOCATE_BUFFER, NULL };
-        struct acpi_buffer in = { (acpi_size)sizeof(bhlk), (void *)(bhlk) };
-        st = wmi_evaluate_method(WMID_GUID4, 0, ACER_WMID_SET_GAMING_KB_BACKLIGHT_METHODID, &in, &out);
-        if (ACPI_FAILURE(st))
-            return st;
-        if (out.pointer) {
-            u64 resp = 0;
-            o = out.pointer;
-            if (o->type == ACPI_TYPE_BUFFER) {
-                if (o->buffer.length == sizeof(u32)) resp = *((u32 *)o->buffer.pointer);
-                else if (o->buffer.length == sizeof(u64)) resp = *((u64 *)o->buffer.pointer);
-            } else if (o->type == ACPI_TYPE_INTEGER) {
-                resp = (u64)o->integer.value;
-            }
-            if (resp != 0) {
-                pr_err("failed to set back logo (0x14): %llu\n", resp);
-                kfree(o);
-                return AE_ERROR;
-            }
-            kfree(o);
-        }
-    }
-
-    /* Step 2: Set logo RGB using Arg1=0x0C (LBLR/LBLG/LBLB/LBLT/LBLF) */
-    {
-        u8 bhgk[6] = { 1 /* select LB color set */, (u8)red, (u8)green, (u8)blue, 0, 0 };
+        u8 bhgk[6] = { 1 /* select LB set */, (u8)red, (u8)green, (u8)blue, (u8)brightness, (u8)enable };
         struct acpi_buffer in = { (acpi_size)sizeof(bhgk), (void *)bhgk };
         acpi_status st = wmi_evaluate_method(WMID_GUID4, 0, 12 /* 0x0C */, &in, NULL);
         if (ACPI_FAILURE(st))
@@ -3756,31 +3718,17 @@ static acpi_status get_logo_status(struct get_four_zoned_kb_output *out)
     memcpy(&col, obj->buffer.pointer, 6);
     kfree(obj);
 
-    /* Get brightness/enable via unified get (0x15) */
-    {
-        u64 sel = 2; /* LB */
-        struct acpi_buffer out_gkb = { ACPI_ALLOCATE_BUFFER, NULL };
-        struct acpi_buffer in_gkb = { (acpi_size)sizeof(u64), (void *)&sel };
-        if (ACPI_FAILURE(wmi_evaluate_method(WMID_GUID4, 0, ACER_WMID_GET_GAMING_KB_BACKLIGHT_METHODID, &in_gkb, &out_gkb)))
-            return AE_ERROR;
-        obj = out_gkb.pointer;
-        if (!obj || obj->type != ACPI_TYPE_BUFFER || obj->buffer.length != 16) {
-            kfree(obj);
-            return AE_ERROR;
-        }
-        struct get_four_zoned_kb_output u = *((struct get_four_zoned_kb_output *)obj->buffer.pointer);
-        kfree(obj);
-        /* Fill output using RGB from 0x0D and brightness/enable from unified */
-        out->gmReturn = u.gmReturn;
-        out->gmOutput[0] = u.gmOutput[0]; /* enable */
-        out->gmOutput[1] = u.gmOutput[1]; /* speed */
-        out->gmOutput[2] = u.gmOutput[2]; /* brightness */
-        out->gmOutput[4] = u.gmOutput[4]; /* reserved/effect */
-        out->gmOutput[5] = col.r;
-        out->gmOutput[6] = col.g;
-        out->gmOutput[7] = col.b;
-        return AE_OK;
-    }
+    /* Populate outputs using 0x0D data for RGB, brightness and enable. Other fields set to 0. */
+    out->gmReturn = 0;
+    out->gmOutput[0] = col.f; /* enable */
+    out->gmOutput[1] = 0;     /* speed (not used for LB) */
+    out->gmOutput[2] = col.t; /* brightness */
+    out->gmOutput[3] = 0;
+    out->gmOutput[4] = 0;     /* effect not reported here */
+    out->gmOutput[5] = col.r;
+    out->gmOutput[6] = col.g;
+    out->gmOutput[7] = col.b;
+    return AE_OK;
 
 fallback_unified:
     {
