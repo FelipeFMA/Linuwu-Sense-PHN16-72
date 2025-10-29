@@ -1,6 +1,6 @@
-# Linuwu-Sense — fork for Acer Predator PHN16-72
+# Nekro-Sense — fork for Acer Predator PHN16-72
 
-This repository is a hardware-specific fork of the original Linuwu-Sense driver. It contains changes developed and tested on the Acer Predator PHN16-72 and may not work on other models or hardware revisions.
+This repository is a hardware-specific fork of the original Linuwu-Sense driver. The project has been rebranded to "Nekro-Sense" for this fork and contains changes developed and tested on the Acer Predator PHN16-72; it may not work on other models or hardware revisions.
 
 Important support and OS scope
 
@@ -147,7 +147,7 @@ python3 tools/linuwu_sense_gui.py
 
 You can start the GUI directly on a specific page using these flags:
 
-- `-k` / `--keyboard` — open on the Keyboard page (default)
+- `-k` / `--keyboard` — open on the RGB page (default)
 - `-p` / `--power` — open on the Power page
 - `-f` / `--fans` — open on the Fans page
 
