@@ -1,4 +1,4 @@
-# Nekro-Sense — Driver for the Acer Predator PHN16-72 on Linux.
+# Nekro-Sense - Driver for the Acer Predator PHN16-72 on Linux.
 
 Nekro-Sense is a heavily changed and adapted fork of Linuwu-Sense specifically targeting the Acer Predator PHN16-72.
 It controls power modes, fan speeds, keyboard RGB, and the backlit logo RGB. It also includes a libadwaita GUI that can be bound to the Predator Sense button on the keyboard.
@@ -9,7 +9,7 @@ Important scope and support notes
 - Hardware focus: Acer Predator PHN16-72 only. The driver was developed and tested specifically on this model.
 - OS scope: Primary development and testing has been on Arch Linux. The module will often work on other mainstream Linux distributions with standard kernels and headers, but other distros are not actively tested here.
 - Support: This is a small, purpose-driven repository. Expect limited support; community contributions and clear PRs are the best path for improvements.
-- Safety: The driver interacts with low-level WMI/ACPI interfaces. Use at your own risk — the author disclaims liability for hardware damage or data loss.
+- Safety: The driver interacts with low-level WMI/ACPI interfaces. Use at your own risk - the author disclaims liability for hardware damage or data loss.
 
 Quick install
 
@@ -100,8 +100,8 @@ Keyboard RGB (four-zone)
 
 When keyboard control is supported, two interfaces are provided:
 
-- `per_zone_mode` — set static RGB per zone (comma-separated hex values and brightness)
-- `four_zone_mode` — set effect modes and parameters (mode, speed, brightness, direction, RGB)
+- `per_zone_mode` - set static RGB per zone (comma-separated hex values and brightness)
+- `four_zone_mode` - set effect modes and parameters (mode, speed, brightness, direction, RGB)
 
 Tools and CLI helper
 
@@ -135,9 +135,9 @@ python3 tools/linuwu_sense_gui.py
 
 You can start on a specific page:
 
-- `-k` / `--keyboard` — open on the RGB page (default)
-- `-p` / `--power` — open on the Power page
-- `-f` / `--fans` — open on the Fans page
+- `-k` / `--keyboard` - open on the RGB page (default)
+- `-p` / `--power` - open on the Power page
+- `-f` / `--fans` - open on the Fans page
 
 Usage examples and low-level operations
 

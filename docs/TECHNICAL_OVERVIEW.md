@@ -1,4 +1,4 @@
-# Nekro-Sense for PHN16-72 — Technical Overview and Rationale
+# Nekro-Sense for PHN16-72 - Technical Overview and Rationale
 
 This document explains how Nekro‑Sense is built, how the platform was reverse‑engineered, and why a transparent, open‑source implementation delivers a better user experience than proprietary OEM tooling.
 
@@ -120,7 +120,7 @@ Note: The driver is conservative by design; unknown statuses or unexpected buffe
 - Build: simple `make` produces the kernel object in `src/`
 - Load/unload: `insmod` and `rmmod` during development; packaging is optional
 - Lint/type: kernel warnings treated strictly; Python sources byte‑compiled during CI or locally
-- Runtime checks: 
+- Runtime checks:
   - Read back via sysfs after each write
   - Visual verification for LED colors/brightness
   - Fallback logic engaged only when the primary path isn’t honored by firmware
