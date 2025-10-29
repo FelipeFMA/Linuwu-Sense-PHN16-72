@@ -246,11 +246,11 @@ class LinuwuApp(Adw.Application):
                 except Exception:
                     pass
 
-        keyboard, kb_refresh = self._build_keyboard_page(notifier)
+        rgb_page_widget, rgb_refresh = self._build_rgb_page(notifier)
         power, power_refresh = self._build_power_page(notifier)
         fans, fans_refresh = self._build_fans_page(notifier)
 
-        kb_page = stack.add_titled(keyboard, "keyboard", "Keyboard")
+        kb_page = stack.add_titled(rgb_page_widget, "keyboard", "RGB")
         power_page = stack.add_titled(power, "power", "Power")
         fans_page = stack.add_titled(fans, "fans", "Fans")
         # Set icons for Keyboard, Power and Fans pages
@@ -299,7 +299,7 @@ class LinuwuApp(Adw.Application):
                 version="1.0",
                 comments=(
                     "GTK4 + libadwaita GUI for Linuwu-Sense.\n"
-                    "Controls keyboard RGB, power profile, and fans via CLI helper."
+                    "Controls RGB (keyboard + back logo), power profile, and fans via CLI helper."
                 ),
                 license_type=Gtk.License.GPL_3_0_ONLY,
                 website="https://github.com/FelipeFMA/Linuwu-Sense",
@@ -312,7 +312,7 @@ class LinuwuApp(Adw.Application):
         act_refresh = Gio.SimpleAction.new("refresh", None)
         def _on_refresh(_a, _p):
             try:
-                kb_refresh()
+                rgb_refresh()
                 power_refresh()
                 fans_refresh()
                 notifier.info("Refreshed status")
@@ -325,12 +325,12 @@ class LinuwuApp(Adw.Application):
         win.present()
         notifier.info("Ready")
 
-    # Keyboard page
-    def _build_keyboard_page(self, notifier: StatusNotifier) -> tuple[Gtk.Widget, Callable[[], None]]:
-        page = Adw.PreferencesPage(title="Keyboard")
+    # RGB page
+    def _build_rgb_page(self, notifier: StatusNotifier) -> tuple[Gtk.Widget, Callable[[], None]]:
+        page = Adw.PreferencesPage(title="RGB")
 
         # Top-level group that will contain three exclusive sections
-        g_modes = Adw.PreferencesGroup(title="Keyboard mode")
+        g_modes = Adw.PreferencesGroup(title="Keyboard RGB (four-zone)")
 
         # Helper to ensure only one section is enabled/expanded at a time
         def make_exclusive_controller(rows: List[Adw.ExpanderRow]):
@@ -685,7 +685,107 @@ class LinuwuApp(Adw.Application):
         dir_row.connect("notify::value", lambda *_: _effect_touch())
         color_row.connect("notify::text", lambda *_: _effect_touch())
 
-        return page, _refresh_keyboard
+        # ---------------- Back logo section ----------------
+        def _build_logo_group() -> tuple[Optional[Adw.PreferencesGroup], Callable[[], None]]:
+            if not path_exists(ctl.LOGO_COLOR):
+                return None, (lambda: None)
+
+            grp = Adw.PreferencesGroup(title="Back logo")
+
+            logo_power = Adw.SwitchRow(title="Power")
+            logo_power.set_active(True)
+            grp.add(logo_power)
+
+            logo_color = Adw.EntryRow(title="Color (RRGGBB)")
+            logo_color.set_text("00ffcc")
+            grp.add(logo_color)
+
+            logo_brightness = Adw.SpinRow(
+                title="Brightness",
+                adjustment=Gtk.Adjustment(lower=0, upper=100, step_increment=1, page_increment=10, value=100),
+            )
+            grp.add(logo_brightness)
+
+            # Debounced instant apply
+            LOGO_DELAY_US = 400_000
+            logo_timer_id: Optional[int] = None
+            logo_last_change: int = 0
+            last_logo_sig: Optional[str] = None
+
+            def _compute_logo_args() -> Optional[List[str]]:
+                try:
+                    c = parse_hex_color(logo_color.get_text())
+                    b = int(logo_brightness.get_value())
+                    on = logo_power.get_active()
+                    args = ["logo", "set", c, "-b", str(b)]
+                    args.append("--on" if on else "--off")
+                    return args
+                except Exception:
+                    return None
+
+            def _apply_logo_now():
+                nonlocal last_logo_sig
+                args = _compute_logo_args()
+                if not args:
+                    return
+                sig = " ".join(args)
+                if sig == last_logo_sig:
+                    return
+                def _done(ok: bool, msg: str):
+                    nonlocal last_logo_sig
+                    if ok:
+                        notifier.info("Back logo updated")
+                        last_logo_sig = sig
+                    else:
+                        notifier.error(msg)
+                run_privileged_async(args, _done)
+
+            def _logo_touch():
+                nonlocal logo_timer_id, logo_last_change
+                logo_last_change = GLib.get_monotonic_time()
+                if logo_timer_id is not None:
+                    return
+                def _tick():
+                    nonlocal logo_timer_id
+                    if GLib.get_monotonic_time() - logo_last_change >= LOGO_DELAY_US:
+                        _apply_logo_now()
+                        logo_timer_id = None
+                        return False
+                    return True
+                logo_timer_id = GLib.timeout_add(100, _tick)
+
+            # Wire inputs
+            logo_power.connect("notify::active", lambda *_: _logo_touch())
+            logo_color.connect("notify::text", lambda *_: _logo_touch())
+            logo_brightness.connect("notify::value", lambda *_: _logo_touch())
+
+            def _refresh_logo() -> None:
+                ok, out = run_privileged(["logo", "get"])
+                if not ok or not out:
+                    return
+                try:
+                    hexcol, brt, en = [p.strip() for p in out.split(",")[:3]]
+                    if hexcol and len(hexcol) == 6:
+                        logo_color.set_text(hexcol)
+                    try:
+                        b = int(brt)
+                        if 0 <= b <= 100:
+                            logo_brightness.set_value(b)
+                    except Exception:
+                        pass
+                    logo_power.set_active(en.strip() == "1")
+                except Exception:
+                    pass
+
+            # Initial populate
+            _refresh_logo()
+            return grp, _refresh_logo
+
+        logo_group, _refresh_logo = _build_logo_group()
+        if logo_group is not None:
+            page.add(logo_group)
+
+        return page, (lambda: (_refresh_keyboard(), _refresh_logo()))
 
     # Power page
     def _build_power_page(self, notifier: StatusNotifier) -> tuple[Gtk.Widget, Callable[[], None]]:
