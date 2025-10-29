@@ -1,47 +1,47 @@
-# Nekro-Sense — fork for Acer Predator PHN16-72
+# Nekro-Sense — Driver for the Acer Predator PHN16-72 on Linux.
 
-This repository is a hardware-specific fork of the original Linuwu-Sense driver. The project has been rebranded to "Nekro-Sense" for this fork and contains changes developed and tested on the Acer Predator PHN16-72; it may not work on other models or hardware revisions.
+Nekro-Sense is a heavily changed and adapted fork of Linuwu-Sense specifically targeting the Acer Predator PHN16-72.
+It controls power modes, fan speeds, keyboard RGB, and the backlit logo RGB. It also includes a libadwaita GUI that can be bound to the Predator Sense button on the keyboard.
 
-Important support and OS scope
+This README explains how to build, install, and use the driver.
 
-- No support is provided. Please do not open issues or ask for help — they will PROBABLY not be answered.
-- Tested only on Arch Linux. It will probably work on most mainstream Linux distributions with standard kernels and headers, but this is not guaranteed.
-
-Important notes
-
-- Tested only on: Acer Predator PHN16-72.
-- OS compatibility: Developed and validated on Arch Linux only; other distros are untested. Likely compatible with common Linux distributions, but you are on your own.
-- The driver uses low-level WMI/ACPI interfaces. On other hardware it may fail to load or behave unpredictably.
-- Use at your own risk. The author is not responsible for hardware damage or data loss.
+Important scope and support notes
+- Hardware focus: Acer Predator PHN16-72 only. The driver was developed and tested specifically on this model.
+- OS scope: Primary development and testing has been on Arch Linux. The module will often work on other mainstream Linux distributions with standard kernels and headers, but other distros are not actively tested here.
+- Support: This is a small, purpose-driven repository. Expect limited support; community contributions and clear PRs are the best path for improvements.
+- Safety: The driver interacts with low-level WMI/ACPI interfaces. Use at your own risk — the author disclaims liability for hardware damage or data loss.
 
 Quick install
 
-1. Install kernel headers for your running kernel (example on Arch: `sudo pacman -S linux-headers`).
+1. Make sure kernel headers for your currently running kernel are installed.
+   - Arch example: `sudo pacman -S linux-headers`
+   - Debian/Ubuntu example: `sudo apt install linux-headers-"$(uname -r)"`
+
 2. Build and install the module:
 
-```bash
-git clone https://github.com/FelipeFMA/Linuwu-Sense-PHN16-72.git
-cd Linuwu-Sense-PHN16-72
-make install
-```
+   ```bash
+   git clone https://github.com/FelipeFMA/nekro-sense.git
+   cd nekro-sense
+   make install
+   ```
 
-The `make install` step will attempt to remove the stock `acer_wmi` module and load the modified module in this repo.
+   The `make install` target will attempt to remove the stock `acer_wmi` module (if loaded) and install the Nekro-Sense module.
 
-To remove the installed module:
+3. To remove the installed module:
 
-```bash
-make uninstall
-```
+   ```bash
+   make uninstall
+   ```
 
-## Build toolchain note (Clang vs GCC)
+Build toolchain note (Clang vs GCC)
 
-Many distributions (e.g., CachyOS) build their kernels with Clang/LLVM. When your running kernel is built with Clang, trying to build this out-of-tree module with GCC can fail with errors like:
+Some distributions build kernels with Clang/LLVM. Building an out-of-tree module with GCC against a Clang-built kernel may surface errors like:
 
 - `gcc: error: unrecognized command-line option ‘-mretpoline-external-thunk’`
 - `gcc: error: unrecognized command-line option ‘-fsplit-lto-unit’`
 - `gcc: error: unrecognized command-line option ‘-mllvm’`
 
-In that case, rebuild using the kernel’s LLVM toolchain:
+If you encounter these, build using the kernel's LLVM toolchain:
 
 ```bash
 # Build with Clang/LLVM to match the kernel toolchain
@@ -49,136 +49,128 @@ make LLVM=1
 sudo make LLVM=1 install
 ```
 
-Alternatively, you can export the variables once for your shell/session:
+You can also export these for your shell/session:
 
 ```bash
 export LLVM=1
-# Optionally make it explicit:
 export CC=clang
 export LD=ld.lld
 ```
 
-## Troubleshooting
+Troubleshooting checklist
 
-- Missing headers: ensure kernel headers for your exact running kernel are installed.
-  - Arch/CachyOS: `sudo pacman -S linux-headers` (or your kernel flavor’s headers)
-  - Debian/Ubuntu: `sudo apt install linux-headers-"$(uname -r)"`
-
-- GCC vs Clang flags: if you see GCC complaining about unknown `-mllvm`, `-fsplit-lto-unit`, or similar flags, rebuild with `LLVM=1` as shown above.
-
-- Operation not permitted in `src/`: if you see errors like `unable to open output file 'src/linuwu_sense.o': Operation not permitted`, it usually means there are root-owned or protected build artifacts in the repo (from a previous sudo build) or immutable attributes.
-  - Fix ownership and clean:
-    ```bash
-    sudo chown -R "$USER":"$USER" /path/to/Linuwu-Sense-PHN16-72
-    make clean
-    ```
-  - If files are immutable, clear the flag (rare):
-    ```bash
-    lsattr -R src
-    # If you see an 'i' attribute, remove it then clean
-    sudo chattr -i src/*
-    make clean
-    ```
-  - Prefer compiling as your user and using `sudo` only for the install step:
-    ```bash
-    make LLVM=1
-    sudo make LLVM=1 install
-    ```
-
-- Module conflicts: the install target tries to remove the stock `acer_wmi` and load this module. If you still see conflicts, unload related modules before installing:
+- Missing headers: ensure you have kernel headers matching `uname -r`.
+- Permission/build errors in `src/`: this often means some files were previously built as root. Fix ownership and clean:
+  ```bash
+  sudo chown -R "$USER":"$USER" /path/to/nekro-sense
+  make clean
+  ```
+  If files have immutable attributes (rare), clear them:
+  ```bash
+  lsattr -R src
+  sudo chattr -i src/*   # only if an 'i' immutable attribute is present
+  make clean
+  ```
+- Module conflicts: if the stock `acer_wmi` is loaded, remove it before installing:
   ```bash
   sudo modprobe -r acer_wmi
   sudo modprobe -r wmi
   sudo make LLVM=1 install
   ```
 
-If issues persist, you are on your own. No support is provided for this fork and bug reports probably won't receive a response. Consult your distro documentation, upstream resources, or debug locally at your own risk.
-
-## Contributions
-
-Pull requests are welcome if they:
-
-- Target exactly the same hardware: Acer Predator PHN16-72 (this fork’s focus).
-- Keep the scope minimal and avoid unnecessary bloat or broad, untested feature additions.
-- Maintain existing behavior for this model and do not introduce cross-model abstractions without clear benefit here.
-
-PRs that add generic features for other models, or introduce complexity without a direct need for PHN16-72, will likely be declined.
+If issues persist, consult distribution docs, kernel build logs, and the code in `tools/` for how the sysfs interface is used. Community PRs and detailed bug reports (with logs and reproduction steps) are the best way to get improvements accepted.
 
 What the module exposes
 
-The module creates sysfs entries that provide control over platform-specific features when supported by the firmware, for example:
+When the firmware supports the features, the module creates sysfs entries providing control for platform-specific functionality such as:
 
-- Thermal/power profiles (ACPI platform profile).
-- Four-zone keyboard backlight (per-zone static colors and effect modes).
-- Fan control and manual fan speed settings.
-- Battery calibration and charge-limiter settings.
-- LCD override and USB charging controls (when supported).
+- Thermal/power profiles (ACPI platform profile)
+- Four-zone keyboard backlight (per-zone static colors and effects)
+- Fan control and manual fan speed settings
+- Battery charge-limiter (80% cap) and calibration hooks
+- LCD override and USB charging toggles (where available)
 
-Typical sysfs paths (examples):
-
-- Predator fork path used here:
-
+Example sysfs paths (these are typical; exact paths may vary by kernel and load order):
+- Nekro-Sense path used here:
   `/sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense`
-
-- Original Nitro example path:
-
+- Legacy Nitro example:
   `/sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/nitro_sense`
 
 Keyboard RGB (four-zone)
 
-When the keyboard is supported, the driver exposes two interfaces:
+When keyboard control is supported, two interfaces are provided:
 
-- `per_zone_mode` — set static RGB per zone (comma-separated hex values and brightness).
-- `four_zone_mode` — set effect modes and parameters (mode, speed, brightness, direction, RGB).
+- `per_zone_mode` — set static RGB per zone (comma-separated hex values and brightness)
+- `four_zone_mode` — set effect modes and parameters (mode, speed, brightness, direction, RGB)
 
 Tools and CLI helper
 
-There is a helper script at `tools/linuwuctl.py` that performs common sysfs reads/writes and validates input formats. Root privileges are required for writes.
+A validated CLI helper is available at `tools/linuwuctl.py`. It performs safe reads/writes against the sysfs attributes and validates user input formats before writing. Root privileges are required for write operations.
 
-### GUI (GTK4 + libadwaita)
+Common examples:
 
-A simple GUI is available at `tools/linuwu_sense_gui.py`.
+```bash
+# Read battery limiter state (1 = ~80% limit enabled, 0 = disabled)
+sudo python3 tools/linuwuctl.py battery get
 
-Run it with Python 3 (you may need to install `python3-gi` and libadwaita bindings on your distro):
+# Enable 80% battery limiter
+sudo python3 tools/linuwuctl.py battery on
+
+# Disable 80% battery limiter
+sudo python3 tools/linuwuctl.py battery off
+
+# Set keyboard zones using a helper (example format validated by the CLI)
+sudo python3 tools/linuwuctl.py keyboard set-zone 1 ff0000,00ff00,0000ff,ffffff
+```
+
+GUI (GTK4 + libadwaita)
+
+A lightweight GUI is provided at `tools/linuwu_sense_gui.py`. It provides pages for keyboard, power, and fans.
+
+Run with Python 3 and the required GUI bindings installed (examples vary by distro; look for `python3-gi` and libadwaita/bindings):
 
 ```bash
 python3 tools/linuwu_sense_gui.py
 ```
 
-You can start the GUI directly on a specific page using these flags:
+You can start on a specific page:
 
 - `-k` / `--keyboard` — open on the RGB page (default)
 - `-p` / `--power` — open on the Power page
 - `-f` / `--fans` — open on the Fans page
 
-Examples:
+Usage examples and low-level operations
+
+For exact, low-level read/write examples, inspect `tools/linuwuctl.py`. Example raw sysfs reads/writes (for experienced users):
 
 ```bash
-python3 tools/linuwu_sense_gui.py --power
-python3 tools/linuwu_sense_gui.py -f
+# Read a sysfs attribute
+cat /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense/battery_limiter
+
+# Write to a sysfs attribute (careful: root required)
+echo 1 | sudo tee /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense/battery_limiter
 ```
 
-Battery limiter (80%)
+Contributing
 
-On supported machines the driver exposes a `battery_limiter` sysfs attribute (1=limit to ~80%, 0=full charge). The CLI provides convenient wrappers:
+Contributions are welcome and appreciated. To keep the repository focused and stable:
 
-```bash
-# Show if the 80% limiter is enabled (1) or disabled (0)
-sudo python3 tools/linuwuctl.py battery get
-
-# Enable 80% charge limit
-sudo python3 tools/linuwuctl.py battery on
-
-# Disable 80% charge limit
-sudo python3 tools/linuwuctl.py battery off
-
-# Or explicitly set with on/off or 1/0
-sudo python3 tools/linuwuctl.py battery set on
-sudo python3 tools/linuwuctl.py battery set 0
-```
+- Please target the PHN16-72 hardware unless you provide clear, tested compatibility for other models.
+- Keep changes minimal and well-justified: prefer clear, small PRs over broad refactors unless unavoidable.
+- Include test steps and reproduction information for any behavior changes.
+- Update documentation and tools when sysfs attributes or user-facing behavior changes.
 
 License and liability
 
-This project is released under the GNU GPLv3. Use it at your own risk; there is no warranty and the author disclaims liability for damages.
+This project is licensed under the GNU General Public License v3 (GPLv3). Use the software at your own risk; there is no warranty and the author disclaims liability for damages.
 
-For full, verbatim usage examples and low-level cat/echo commands, see the original project's README or inspect `tools/linuwuctl.py` for practical examples.
+Acknowledgments
+
+- Original Linuwu-Sense work provided the foundation and many implementation ideas. Nekro-Sense has diverged substantially and is maintained separately with PHN16-72 as the central target.
+
+Contact and reporting
+
+- The most effective way to improve the project is via pull requests with tests and clear rationale.
+- If you open an issue, include hardware revision, kernel version (output of `uname -a`), distribution, and a short description of the problem and steps to reproduce.
+
+Thank you for using Nekro-Sense. Contributions, feedback, and well-formed issues are what keep hardware projects like this working well across kernel and firmware changes.
