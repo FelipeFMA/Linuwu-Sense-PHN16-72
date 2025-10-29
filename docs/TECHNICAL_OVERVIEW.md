@@ -14,7 +14,7 @@ Nekro‑Sense adds first‑class Linux support for key device features on the Ac
 - Battery charge limiter integration
 
 
-It achieves this by interfacing directly with the machine’s ACPI/WMI firmware methods, following a careful, device‑specific reverse‑engineering process. The result is a small, auditable kernel module with a clean sysfs API, plus a CLI and a minimal GTK4 GUI that work out of the box on Linux—without background daemons, heavyweight services, or lock‑in.
+It achieves this by interfacing directly with the machine’s ACPI/WMI firmware methods, following a careful, device‑specific reverse‑engineering process. The result is a small, auditable kernel module with a clean sysfs API, plus a CLI and a minimal GTK4 GUI that work out of the box on Linux. Without background daemons, heavyweight services, or lock‑in.
 
 ## Project history and scope
 
@@ -36,8 +36,8 @@ Although we borrow lessons and patterns from the upstream project, the current c
   - Exposes a stable sysfs surface under `drivers/platform:acer-wmi/acer-wmi/…`
   - Device‑specific capabilities are gated by DMI (PHN16‑72 only for the back logo)
 - User space
-  - CLI: `tools/linuwuctl.py` — scriptable control for every feature
-  - GUI: `tools/linuwu_sense_gui.py` — lightweight GTK4/libadwaita frontend
+  - CLI: `tools/linuwuctl.py` - scriptable control for every feature
+  - GUI: `tools/linuwu_sense_gui.py` - lightweight GTK4/libadwaita frontend
   - Privileged writes use `pkexec` when needed; the GUI never writes `/sys` directly
 
 All code paths prefer minimalism: no background telemetry, no network calls, no opaque services. You can audit every line.
@@ -93,10 +93,10 @@ Note: The driver is conservative by design; unknown statuses or unexpected buffe
   - The back‑logo controls are enabled only on PHN16‑72 where they’ve been validated
 - Sysfs API surface
   - Keyboard:
-    - `four_zoned_kb/per_zone_mode` — `RRGGBB,RRGGBB,RRGGBB,RRGGBB,brightness`
-    - `four_zoned_kb/four_zone_mode` — `mode,speed,brightness,direction,R,G,B`
+    - `four_zoned_kb/per_zone_mode` - `RRGGBB,RRGGBB,RRGGBB,RRGGBB,brightness`
+    - `four_zoned_kb/four_zone_mode` - `mode,speed,brightness,direction,R,G,B`
   - Back logo:
-    - `back_logo/color` — `RRGGBB,brightness,enable`
+    - `back_logo/color` - `RRGGBB,brightness,enable`
   - Platform profile and fan control live under predictable nodes as well
 - Implementation highlights
   - All WMI calls go through WMID with strict buffer validations
@@ -149,7 +149,7 @@ In contrast, proprietary Windows utilities (e.g., vendor “control center” ap
 - Provide no insight into what they change or how they interact with firmware
 - Are tied to specific OS versions and product lines, limiting long‑term support
 
-The open‑source path prioritizes user agency, auditability, and a great Linux experience—today and years from now.
+The open‑source path prioritizes user agency, auditability, and a great Linux experience, today and years from now.
 
 
 ## Responsible disclosure and safety notes
@@ -168,7 +168,7 @@ The open‑source path prioritizes user agency, auditability, and a great Linux 
 - Additional laptop models via community‑contributed DMI entries
 
 
-## Appendix A — Quick reference (PHN16‑72)
+## Appendix A - Quick reference (PHN16‑72)
 
 - WMID GUID: `7A4DDFE7-5B5D-40B4-8595-4408E0CC7F56`
 - Methods used (dispatcher `WMBH`):
@@ -179,7 +179,7 @@ The open‑source path prioritizes user agency, auditability, and a great Linux 
   - `0x06/0x07` per‑segment paths (not required for baseline functionality)
 
 
-## Appendix B — Getting started
+## Appendix B - Getting started
 
 - Build: `make`
 - Load: `sudo insmod src/linuwu_sense.ko`
