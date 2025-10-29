@@ -3691,6 +3691,28 @@ static acpi_status set_logo_status(int enable, int brightness, int effect,
             return st;
     }
 
+    /* Also drive the LBLE gate via unified setter (0x14), which some firmware uses for power */
+    {
+        u8 bhlk[16] = {
+            (u8)enable, /* LBLE */
+            0,           /* LBLS */
+            0,           /* LBBP (ignored for LB) */
+            0,           /* reserved */
+            0,           /* LBED (no change) */
+            0, 0, 0,     /* colors ignored for LB in 0x14 */
+            0,           /* LLES */
+            2,           /* select LB */
+            0, 0, 0, 0, 0, 0
+        };
+        union acpi_object *o = NULL;
+        struct acpi_buffer out = { ACPI_ALLOCATE_BUFFER, NULL };
+        struct acpi_buffer in = { (acpi_size)sizeof(bhlk), (void *)(bhlk) };
+        acpi_status st = wmi_evaluate_method(WMID_GUID4, 0, ACER_WMID_SET_GAMING_KB_BACKLIGHT_METHODID, &in, &out);
+        if (ACPI_FAILURE(st))
+            return st;
+        if (out.pointer) kfree(out.pointer);
+    }
+
     return AE_OK;
 }
 
@@ -4191,6 +4213,10 @@ static ssize_t back_logo_store(struct device *dev, struct device_attribute *attr
 
     if (enable < 0)
         enable = brightness > 0 ? 1 : 0;
+
+    /* Some firmware ignores the enable flag for LB; enforce off by forcing brightness=0 */
+    if (enable == 0)
+        brightness = 0;
 
     /* effect 0 = static */
     status = set_logo_status(enable, brightness, 0, (int)r, (int)g, (int)b);
