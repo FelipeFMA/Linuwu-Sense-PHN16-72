@@ -1,11 +1,11 @@
-obj-m := src/linuwu_sense.o
+obj-m := src/nekro_sense.o
 
 KVER  ?= $(shell uname -r)
 KDIR  := /lib/modules/$(KVER)/build
 PWD   := $(shell pwd)
 
 MDIR  := /lib/modules/$(KVER)/kernel/drivers/platform/x86
-MODNAME := linuwu_sense
+MODNAME := nekro_sense
 REAL_USER := $(shell echo $${SUDO_USER:-$$(whoami)})
 
 all:
@@ -17,18 +17,18 @@ clean:
 uninstall:
 	@sudo rm -f /etc/modules-load.d/$(MODNAME).conf
 	@sudo rm -f /etc/modprobe.d/blacklist-acer_wmi.conf
-	@sudo systemctl stop linuwu_sense.service
-	@sudo systemctl disable linuwu_sense.service
-	@sudo rm -f /etc/systemd/system/linuwu_sense.service
+	@sudo systemctl stop nekro_sense.service
+	@sudo systemctl disable nekro_sense.service
+	@sudo rm -f /etc/systemd/system/nekro_sense.service
 	@sudo systemctl daemon-reload
 	@sudo rmmod $(MODNAME) 2>/dev/null || true
 	@sudo modprobe acer_wmi
-	@echo "Removing current user from linuwu_sense group if exists..."
-	@if getent group linuwu_sense >/dev/null; then \
-		sudo gpasswd -d $(REAL_USER) linuwu_sense || true; \
-		sudo groupdel linuwu_sense || true; \
+	@echo "Removing current user from nekro_sense group if exists..."
+	@if getent group nekro_sense >/dev/null; then \
+		sudo gpasswd -d $(REAL_USER) nekro_sense || true; \
+		sudo groupdel nekro_sense || true; \
 	else \
-		echo "Group linuwu_sense does not exist."; \
+		echo "Group nekro_sense does not exist."; \
 	fi
 	@sudo rm -f /etc/tmpfiles.d/$(MODNAME).conf
 	@sudo rm -f $(MDIR)/$(MODNAME).ko
@@ -44,16 +44,16 @@ install: all
 	@echo "$(MODNAME)" | sudo tee /etc/modules-load.d/$(MODNAME).conf > /dev/null
 	sudo modprobe $(MODNAME)
 	@sleep 2
-	@sudo cp linuwu_sense.service /etc/systemd/system/
+	@sudo cp nekro_sense.service /etc/systemd/system/
 	@sudo systemctl daemon-reload
-	@sudo systemctl enable linuwu_sense.service
-	@sudo systemctl start linuwu_sense.service
+	@sudo systemctl enable nekro_sense.service
+	@sudo systemctl start nekro_sense.service
 	@echo "Setting up group and permissions..."
 	@echo "Detected user: $(REAL_USER)"
-	@if ! getent group linuwu_sense >/dev/null; then \
-		sudo groupadd linuwu_sense; \
-	fi; 
-	sudo usermod -aG linuwu_sense $(REAL_USER)
+	@if ! getent group nekro_sense >/dev/null; then \
+		sudo groupadd nekro_sense; \
+	fi;
+	sudo usermod -aG nekro_sense $(REAL_USER)
 	@echo "Setting permissions via tmpfiles..."
 	@model_path=$$(ls /sys/module/$(MODNAME)/drivers/platform:acer-wmi/acer-wmi/ | grep -E 'predator_sense|nitro_sense' || true); \
 	if [ -n "$$model_path" ]; then \
@@ -81,4 +81,3 @@ install: all
 		echo "Warning: Could not detect predator_sense or nitro_sense in sysfs."; \
 	fi
 	@echo "Module $(MODNAME) installed and configured to load at boot."
-

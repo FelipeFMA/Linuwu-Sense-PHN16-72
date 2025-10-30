@@ -22,7 +22,7 @@ Nekro‑Sense began as a community fork of the `linuwu-sense` project. While the
 
 - Re‑derivation of ACPI/WMI mappings from disassembled firmware tables for higher accuracy on PHN16‑72.
 - Additional defensive checks and DMI gating to avoid applying model‑specific methods on other hardware.
-- Expanded user‑space tooling: a fully scriptable CLI (`tools/linuwuctl.py`) and a GTK4 GUI (`tools/linuwu_sense_gui.py`) that use the CLI for privileged operations.
+- Expanded user‑space tooling: a fully scriptable CLI (`tools/nekroctl.py`) and a GTK4 GUI (`tools/nekroctl_gui.py`) that use the CLI for privileged operations.
 - Multiple firmware method paths and fallbacks (e.g., dedicated logo color methods and unified setters) to improve compatibility and reliability.
 
 Although we borrow lessons and patterns from the upstream project, the current codebase is tailored to PHN16‑72 and designed to be self‑contained, auditable, and easy to script and extend.
@@ -30,14 +30,14 @@ Although we borrow lessons and patterns from the upstream project, the current c
 
 ## Architecture at a glance
 
-- Kernel module: `src/linuwu_sense.c`
+- Kernel module: `src/nekro_sense.c`
   - Registers a platform driver under the existing Acer WMI stack
   - Uses the vendor WMID interface to invoke ACPI methods exposed by firmware
   - Exposes a stable sysfs surface under `drivers/platform:acer-wmi/acer-wmi/…`
   - Device‑specific capabilities are gated by DMI (PHN16‑72 only for the back logo)
 - User space
-  - CLI: `tools/linuwuctl.py` - scriptable control for every feature
-  - GUI: `tools/linuwu_sense_gui.py` - lightweight GTK4/libadwaita frontend
+  - CLI: `tools/nekroctl.py` - scriptable control for every feature
+  - GUI: `tools/nekroctl_gui.py` - lightweight GTK4/libadwaita frontend
   - Privileged writes use `pkexec` when needed; the GUI never writes `/sys` directly
 
 All code paths prefer minimalism: no background telemetry, no network calls, no opaque services. You can audit every line.
@@ -182,11 +182,11 @@ The open‑source path prioritizes user agency, auditability, and a great Linux 
 ## Appendix B - Getting started
 
 - Build: `make`
-- Load: `sudo insmod src/linuwu_sense.ko`
+- Load: `sudo insmod src/nekro_sense.ko`
 - CLI examples:
-  - Keyboard per‑zone static: `tools/linuwuctl.py rgb per-zone ff0000 00ff00 0000ff ffffff -b 60`
-  - Keyboard effect: `tools/linuwuctl.py rgb effect wave -s 2 -b 80 -d 2 -c ff00ff`
-  - Back logo: `tools/linuwuctl.py logo set ff6600 -b 70 --on`
-  - Fans: `tools/linuwuctl.py fan auto` or `tools/linuwuctl.py fan set --cpu 35 --gpu 35`
+  - Keyboard per‑zone static: `tools/nekroctl.py rgb per-zone ff0000 00ff00 0000ff ffffff -b 60`
+  - Keyboard effect: `tools/nekroctl.py rgb effect wave -s 2 -b 80 -d 2 -c ff00ff`
+  - Back logo: `tools/nekroctl.py logo set ff6600 -b 70 --on`
+  - Fans: `tools/nekroctl.py fan auto` or `tools/nekroctl.py fan set --cpu 35 --gpu 35`
 
 All commands operate on local sysfs paths; no internet connectivity is used or required.

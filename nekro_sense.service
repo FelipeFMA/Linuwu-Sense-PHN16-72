@@ -1,0 +1,11 @@
+[Unit]
+Description=Unload nekro_sense at shutdown
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStop=/sbin/rmmod nekro_sense
+
+[Install]
+WantedBy=multi-user.target
+WantedBy=multi-user.target

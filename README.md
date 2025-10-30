@@ -92,9 +92,9 @@ When the firmware supports the features, the module creates sysfs entries provid
 
 Example sysfs paths (these are typical; exact paths may vary by kernel and load order):
 - Nekro-Sense path used here:
-  `/sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense`
+  `/sys/module/nekro_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense`
 - Legacy Nitro example:
-  `/sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/nitro_sense`
+  `/sys/module/nekro_sense/drivers/platform:acer-wmi/acer-wmi/nitro_sense`
 
 Keyboard RGB (four-zone)
 
@@ -105,32 +105,32 @@ When keyboard control is supported, two interfaces are provided:
 
 Tools and CLI helper
 
-A validated CLI helper is available at `tools/linuwuctl.py`. It performs safe reads/writes against the sysfs attributes and validates user input formats before writing. Root privileges are required for write operations.
+A validated CLI helper is available at `tools/nekroctl.py`. It performs safe reads/writes against the sysfs attributes and validates user input formats before writing. Root privileges are required for write operations.
 
 Common examples:
 
 ```bash
 # Read battery limiter state (1 = ~80% limit enabled, 0 = disabled)
-sudo python3 tools/linuwuctl.py battery get
+sudo python3 tools/nekroctl.py battery get
 
 # Enable 80% battery limiter
-sudo python3 tools/linuwuctl.py battery on
+sudo python3 tools/nekroctl.py battery on
 
 # Disable 80% battery limiter
-sudo python3 tools/linuwuctl.py battery off
+sudo python3 tools/nekroctl.py battery off
 
 # Set keyboard zones using a helper (example format validated by the CLI)
-sudo python3 tools/linuwuctl.py keyboard set-zone 1 ff0000,00ff00,0000ff,ffffff
+sudo python3 tools/nekroctl.py keyboard set-zone 1 ff0000,00ff00,0000ff,ffffff
 ```
 
 GUI (GTK4 + libadwaita)
 
-A lightweight GUI is provided at `tools/linuwu_sense_gui.py`. It provides pages for keyboard, power, and fans.
+A lightweight GUI is provided at `tools/nekroctl_gui.py`. It provides pages for keyboard, power, and fans.
 
 Run with Python 3 and the required GUI bindings installed (examples vary by distro; look for `python3-gi` and libadwaita/bindings):
 
 ```bash
-python3 tools/linuwu_sense_gui.py
+python3 tools/nekroctl_gui.py
 ```
 
 You can start on a specific page:
@@ -141,14 +141,14 @@ You can start on a specific page:
 
 Usage examples and low-level operations
 
-For exact, low-level read/write examples, inspect `tools/linuwuctl.py`. Example raw sysfs reads/writes (for experienced users):
+For exact, low-level read/write examples, inspect `tools/nekroctl.py`. Example raw sysfs reads/writes (for experienced users):
 
 ```bash
 # Read a sysfs attribute
-cat /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense/battery_limiter
+cat /sys/module/nekro_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense/battery_limiter
 
 # Write to a sysfs attribute (careful: root required)
-echo 1 | sudo tee /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense/battery_limiter
+echo 1 | sudo tee /sys/module/nekro_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense/battery_limiter
 ```
 
 Contributing

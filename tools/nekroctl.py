@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-linuwuctl: CLI for Linuwu-Sense kernel module controls
+nekroctl: CLI for Nekro-Sense kernel module controls
 
 Features:
 - Keyboard RGB (four-zone): per-zone static colors, or effect modes
@@ -8,14 +8,15 @@ Features:
 - Fan speed: set auto or CPU/GPU percentages
 
 Requirements:
-- Linuwu-Sense kernel module loaded
+- Nekro-Sense kernel module loaded
 - Run with sufficient privileges (writes typically require root)
 
 Paths referenced (if present):
-- /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/four_zoned_kb/{per_zone_mode,four_zone_mode}
-- /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/{predator_sense|nitro_sense}/fan_speed
+- /sys/module/nekro_sense/drivers/platform:acer-wmi/acer-wmi/four_zoned_kb/{per_zone_mode,four_zone_mode}
+- /sys/module/nekro_sense/drivers/platform:acer-wmi/acer-wmi/{predator_sense|nitro_sense}/fan_speed
 - /sys/firmware/acpi/platform_profile{,_choices}
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,7 +25,7 @@ import sys
 from typing import Optional, Tuple, List
 
 
-SYSFS_BASE = "/sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi"
+SYSFS_BASE = "/sys/module/nekro_sense/drivers/platform:acer-wmi/acer-wmi"
 KB_PER_ZONE = os.path.join(SYSFS_BASE, "four_zoned_kb/per_zone_mode")
 KB_FOUR_MODE = os.path.join(SYSFS_BASE, "four_zoned_kb/four_zone_mode")
 
@@ -82,7 +83,7 @@ def _detect_sense_dir() -> Optional[str]:
 def _require_path(path: str, desc: str) -> None:
     if not _path_exists(path):
         sys.stderr.write(
-            f"Missing {desc} at {path}. Ensure the Linuwu-Sense module is loaded and your device supports this feature.\n"
+            f"Missing {desc} at {path}. Ensure the Nekro-Sense module is loaded and your device supports this feature.\n"
         )
         sys.exit(2)
 
@@ -188,7 +189,15 @@ def cmd_rgb_effect(args: argparse.Namespace) -> None:
         b = int(hexcol[4:6], 16)
 
     payload = ",".join(
-        [str(mode_id), str(speed), str(brightness), str(direction), str(r), str(g), str(b)]
+        [
+            str(mode_id),
+            str(speed),
+            str(brightness),
+            str(direction),
+            str(r),
+            str(g),
+            str(b),
+        ]
     )
     _write_text(KB_FOUR_MODE, payload + "\n")
     print("OK: effect set")
@@ -338,8 +347,8 @@ def cmd_battery_off(_: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="linuwuctl",
-        description="Control Linuwu-Sense features: keyboard RGB, power profile, fan speed",
+        prog="nekroctl",
+        description="Control Nekro-Sense features: keyboard RGB, power profile, fan speed",
     )
     sub = p.add_subparsers(dest="cmd")
     # If no subcommand provided, show top-level help
@@ -358,7 +367,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     per.add_argument("colors", nargs="*", help="RRGGBB colors (1 or 4)")
     per.add_argument(
-        "-b", "--brightness", type=int, default=100, help="Brightness 0-100 (default 100)"
+        "-b",
+        "--brightness",
+        type=int,
+        default=100,
+        help="Brightness 0-100 (default 100)",
     )
     per.set_defaults(func=cmd_rgb_per_zone, _parser=per)
 
@@ -375,7 +388,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mode name or id (static, breathing, neon, wave, shifting, zoom, meteor, twinkling) or 0-7",
     )
     eff.add_argument("-s", "--speed", type=int, default=1, help="Speed 0-9 (default 1)")
-    eff.add_argument("-b", "--brightness", type=int, default=100, help="Brightness 0-100")
+    eff.add_argument(
+        "-b", "--brightness", type=int, default=100, help="Brightness 0-100"
+    )
     eff.add_argument("-d", "--direction", type=int, default=2, help="Direction 1-2")
     eff.add_argument("-c", "--color", help="Color RRGGBB or #RRGGBB (if applicable)")
     eff.set_defaults(func=cmd_rgb_effect, _parser=eff)
@@ -390,11 +405,13 @@ def build_parser() -> argparse.ArgumentParser:
     plist.set_defaults(func=cmd_power_list)
     pset = power_sub.add_parser("set", help="Set profile to MODE")
     pset.add_argument("mode", nargs="?", help="Profile name (from 'list')")
+
     def _power_set_wrapper(a: argparse.Namespace):
         if a.mode is None:
             pset.print_help()
             return
         cmd_power_set(a)
+
     pset.set_defaults(func=_power_set_wrapper)
 
     # logo
@@ -407,13 +424,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     lset = logo_sub.add_parser("set", help="Set color and optional brightness/on|off")
     lset.add_argument("color", help="RRGGBB color or #RRGGBB")
-    lset.add_argument("-b", "--brightness", type=int, default=100, help="Brightness 0-100")
+    lset.add_argument(
+        "-b", "--brightness", type=int, default=100, help="Brightness 0-100"
+    )
     lset.add_argument("--on", action="store_true", help="Enable logo explicitly")
     lset.add_argument("--off", action="store_true", help="Disable logo explicitly")
+
     def _logo_set_wrapper(a: argparse.Namespace):
         if a.on and a.off:
             raise SystemExit("Choose either --on or --off, not both")
         cmd_logo_set(a)
+
     lset.set_defaults(func=_logo_set_wrapper)
 
     # fan
@@ -444,12 +465,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         help="GPU fan value 1-100 or 'auto'",
     )
+
     def _fan_set_wrapper(a: argparse.Namespace):
         # If nothing was provided at all, show help
         if not a.values and a.cpu is None and a.gpu is None:
             fset.print_help()
             return
         cmd_fan_set(a)
+
     fset.set_defaults(func=_fan_set_wrapper)
 
     # battery
@@ -468,11 +491,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     bset = battery_sub.add_parser("set", help="Set limiter to on/off or 1/0")
     bset.add_argument("mode", nargs="?", help="on/off or 1/0")
+
     def _battery_set_wrapper(a: argparse.Namespace):
         if a.mode is None:
             bset.print_help()
             return
         cmd_battery_set(a)
+
     bset.set_defaults(func=_battery_set_wrapper)
 
     return p

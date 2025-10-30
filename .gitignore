@@ -8,22 +8,19 @@ Module.symvers
 modules.order
 
 # Build artifacts in src
-src/.linuwu_sense.ko.cmd
-src/.linuwu_sense.mod.cmd
-src/.linuwu_sense.mod.o.cmd
-src/.linuwu_sense.o.cmd
-src/linuwu_sense.ko
-src/linuwu_sense.mod
-src/linuwu_sense.mod.c
-src/linuwu_sense.mod.o
-src/linuwu_sense.o
+src/.nekro_sense.ko.cmd
+src/.nekro_sense.mod.cmd
+src/.nekro_sense.mod.o.cmd
+src/.nekro_sense.o.cmd
+src/nekro_sense.ko
+src/nekro_sense.mod
+src/nekro_sense.mod.c
+src/nekro_sense.mod.o
+src/nekro_sense.o
 
 # Python compiled/cache
 __pycache__/
 tools/__pycache__/
-
-# Service/runtime files
-*.service
 
 # Makefile generated files
 *.cmd

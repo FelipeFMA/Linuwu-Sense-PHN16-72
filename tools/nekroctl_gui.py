@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Linuwu Sense (GTK)
+Nekro Sense (GTK)
 
-A minimal GTK4 + libadwaita GUI to control the Linuwu-Sense kernel module.
+A minimal GTK4 + libadwaita GUI to control the Nekro-Sense kernel module.
 
 Features:
 - Keyboard RGB four-zone: per-zone static or simple effect
@@ -11,17 +11,14 @@ Features:
 
 Notes:
 - Privileged operations are executed via polkit using `pkexec` by spawning
-    the CLI helper `linuwuctl.py`. If permission is denied when running
+    the CLI helper `nekroctl.py`. If permission is denied when running
     unprivileged, the GUI will re-run the action with `pkexec` and prompt for
     authentication when needed.
-- The GUI does not write directly to /sys; it shells out to the CLI.
-
-Dependencies (Debian/Ubuntu):
-- sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 policykit-1
 
 Run:
-- python3 tools/linuwu_sense_gui.py
+- python3 tools/nekroctl_gui.py
 """
+
 from __future__ import annotations
 
 import os
@@ -33,6 +30,7 @@ import shutil
 
 try:
     import gi
+
     gi.require_version("Gtk", "4.0")
     gi.require_version("Adw", "1")
     from gi.repository import Adw, Gtk, Gio, GLib
@@ -50,27 +48,25 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 try:
-    import linuwuctl as ctl
+    import nekroctl as ctl
 except Exception as e:
-    sys.stderr.write(
-        f"Failed to import linuwuctl from tools/: {e}\n"
-    )
+    sys.stderr.write(f"Failed to import nekroctl from tools/: {e}\n")
     raise
 
 
 # ---------- Privilege helper via polkit (pkexec) ----------
-LINUWUCTL_PATH = os.path.join(HERE, "linuwuctl.py")
+NEKROCTL_PATH = os.path.join(HERE, "nekroctl.py")
 
 
 def _have_pkexec() -> bool:
     return shutil.which("pkexec") is not None
 
 
-def _run_linuwuctl(args: List[str]) -> tuple[int, str, str]:
+def _run_nekroctl(args: List[str]) -> tuple[int, str, str]:
     """
     Run the CLI helper without elevation. Returns (code, stdout, stderr).
     """
-    cmd = [sys.executable, LINUWUCTL_PATH] + args
+    cmd = [sys.executable, NEKROCTL_PATH] + args
     proc = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
@@ -87,7 +83,7 @@ def _run_with_pkexec(args: List[str]) -> tuple[int, str, str]:
     """
     if not _have_pkexec():
         return 127, "", "pkexec not found; install policykit-1"
-    cmd = ["pkexec", sys.executable, LINUWUCTL_PATH] + args
+    cmd = ["pkexec", sys.executable, NEKROCTL_PATH] + args
     proc = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
@@ -103,11 +99,13 @@ def run_privileged(args: List[str]) -> tuple[bool, str]:
     Try to run CLI normally; if permission-related failure, retry with pkexec.
     Returns (success, message) combining stdout/stderr).
     """
-    code, out, err = _run_linuwuctl(args)
+    code, out, err = _run_nekroctl(args)
     if code == 0:
         return True, out or "OK"
     # If PermissionError was propagated by CLI, it returns code 3
-    perm_denied = (code == 3) or ("Permission denied" in err or "permission" in err.lower())
+    perm_denied = (code == 3) or (
+        "Permission denied" in err or "permission" in err.lower()
+    )
     if perm_denied:
         code2, out2, err2 = _run_with_pkexec(args)
         if code2 == 0:
@@ -126,10 +124,12 @@ def run_privileged_async(args: List[str], on_done: Callable[[bool, str], None]) 
 
     on_done: callable taking (ok: bool, msg: str)
     """
+
     def _worker():
         ok, msg = run_privileged(args)
         # Ensure UI updates happen on the main thread
         GLib.idle_add(on_done, ok, msg)
+
     threading.Thread(target=_worker, daemon=True).start()
 
 
@@ -185,7 +185,10 @@ class StatusNotifier:
 
 class LinuwuApp(Adw.Application):
     def __init__(self, initial_page: str = "keyboard"):
-        super().__init__(application_id="org.example.LinuwuSense", flags=Gio.ApplicationFlags.FLAGS_NONE)
+        super().__init__(
+            application_id="org.example.NekroSense",
+            flags=Gio.ApplicationFlags.FLAGS_NONE,
+        )
         # Follow system appearance; DEFAULT maps to system preference in libadwaita.
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.DEFAULT)
         # Which page to show first ("keyboard", "power", or "fans")
@@ -197,7 +200,7 @@ class LinuwuApp(Adw.Application):
             return
 
         win = Adw.ApplicationWindow(application=self)
-        win.set_title("Linuwu Sense")
+        win.set_title("Nekro Sense")
         win.set_default_size(720, 560)
 
         # Header and status
@@ -291,25 +294,28 @@ class LinuwuApp(Adw.Application):
 
         # Global actions
         act_about = Gio.SimpleAction.new("about", None)
+
         def _on_about(_a, _p):
             about = Adw.AboutWindow(
                 application=self,
-                application_name="Linuwu Sense",
+                application_name="Nekro Sense",
                 developer_name="Community",
                 version="1.0",
                 comments=(
-                    "GTK4 + libadwaita GUI for Linuwu-Sense.\n"
+                    "GTK4 + libadwaita GUI for Nekro-Sense.\n"
                     "Controls RGB (keyboard + back logo), power profile, and fans via CLI helper."
                 ),
                 license_type=Gtk.License.GPL_3_0_ONLY,
-                website="https://github.com/FelipeFMA/Linuwu-Sense",
+                website="https://github.com/FelipeFMA/nekro-sense",
             )
             about.set_transient_for(win)
             about.present()
+
         act_about.connect("activate", _on_about)
         self.add_action(act_about)
 
         act_refresh = Gio.SimpleAction.new("refresh", None)
+
         def _on_refresh(_a, _p):
             try:
                 rgb_refresh()
@@ -318,6 +324,7 @@ class LinuwuApp(Adw.Application):
                 notifier.info("Refreshed status")
             except Exception as e:
                 notifier.error(f"Refresh failed: {e}")
+
         act_refresh.connect("activate", _on_refresh)
         self.add_action(act_refresh)
 
@@ -326,7 +333,9 @@ class LinuwuApp(Adw.Application):
         notifier.info("Ready")
 
     # RGB page
-    def _build_rgb_page(self, notifier: StatusNotifier) -> tuple[Gtk.Widget, Callable[[], None]]:
+    def _build_rgb_page(
+        self, notifier: StatusNotifier
+    ) -> tuple[Gtk.Widget, Callable[[], None]]:
         page = Adw.PreferencesPage(title="RGB")
 
         # Top-level group that will contain three exclusive sections
@@ -350,6 +359,7 @@ class LinuwuApp(Adw.Application):
                     # If user disables active row, collapse it
                     if changed_row.get_expanded():
                         changed_row.set_expanded(False)
+
             for r in rows:
                 r.connect("notify::enable-expansion", on_toggle)
 
@@ -369,7 +379,7 @@ class LinuwuApp(Adw.Application):
         # Zone rows
         z_entries: List[Adw.EntryRow] = []
         for i in range(4):
-            er = Adw.EntryRow(title=f"Zone {i+1} (RRGGBB)")
+            er = Adw.EntryRow(title=f"Zone {i + 1} (RRGGBB)")
             er.set_text("00aaff")
             er.set_sensitive(False)  # disabled when single color on
             z_entries.append(er)
@@ -383,7 +393,12 @@ class LinuwuApp(Adw.Application):
 
         single_row.connect("notify::active", on_single_toggled)
 
-        bright_row = Adw.SpinRow(title="Brightness", adjustment=Gtk.Adjustment(lower=0, upper=100, step_increment=1, page_increment=10, value=100))
+        bright_row = Adw.SpinRow(
+            title="Brightness",
+            adjustment=Gtk.Adjustment(
+                lower=0, upper=100, step_increment=1, page_increment=10, value=100
+            ),
+        )
         per_row.add_row(bright_row)
 
         # Debounced instant apply for Per-zone (trailing-edge without source_remove warnings)
@@ -418,6 +433,7 @@ class LinuwuApp(Adw.Application):
             sig = " ".join(args)
             if sig == last_per_zone_args:
                 return
+
             def _done(ok: bool, msg: str):
                 nonlocal last_per_zone_args
                 if ok:
@@ -425,6 +441,7 @@ class LinuwuApp(Adw.Application):
                     last_per_zone_args = sig
                 else:
                     notifier.error(msg)
+
             run_privileged_async(args, _done)
 
         def _per_zone_touch():
@@ -432,13 +449,18 @@ class LinuwuApp(Adw.Application):
             per_zone_last_change = GLib.get_monotonic_time()
             if per_zone_timer_id is not None:
                 return
+
             def _tick():
                 nonlocal per_zone_timer_id
-                if GLib.get_monotonic_time() - per_zone_last_change >= PER_ZONE_DELAY_US:
+                if (
+                    GLib.get_monotonic_time() - per_zone_last_change
+                    >= PER_ZONE_DELAY_US
+                ):
                     _apply_per_zone_now()
                     per_zone_timer_id = None
                     return False
                 return True
+
             per_zone_timer_id = GLib.timeout_add(100, _tick)
 
         # ---------------- Effect section ----------------
@@ -454,9 +476,24 @@ class LinuwuApp(Adw.Application):
         mode_row.set_selected(mode_names.index("wave") if "wave" in mode_names else 0)
         eff_row.add_row(mode_row)
 
-        speed_row = Adw.SpinRow(title="Speed", adjustment=Gtk.Adjustment(lower=0, upper=9, step_increment=1, page_increment=1, value=1))
-        bright2_row = Adw.SpinRow(title="Brightness", adjustment=Gtk.Adjustment(lower=0, upper=100, step_increment=1, page_increment=10, value=100))
-        dir_row = Adw.SpinRow(title="Direction (1-2)", adjustment=Gtk.Adjustment(lower=1, upper=2, step_increment=1, page_increment=1, value=2))
+        speed_row = Adw.SpinRow(
+            title="Speed",
+            adjustment=Gtk.Adjustment(
+                lower=0, upper=9, step_increment=1, page_increment=1, value=1
+            ),
+        )
+        bright2_row = Adw.SpinRow(
+            title="Brightness",
+            adjustment=Gtk.Adjustment(
+                lower=0, upper=100, step_increment=1, page_increment=10, value=100
+            ),
+        )
+        dir_row = Adw.SpinRow(
+            title="Direction (1-2)",
+            adjustment=Gtk.Adjustment(
+                lower=1, upper=2, step_increment=1, page_increment=1, value=2
+            ),
+        )
         color_row = Adw.EntryRow(title="Color (optional RRGGBB)")
         color_row.set_text("")
         eff_row.add_row(speed_row)
@@ -479,7 +516,17 @@ class LinuwuApp(Adw.Application):
                 brightness = int(bright2_row.get_value())
                 direction = int(dir_row.get_value())
                 ctext = color_row.get_text().strip()
-                args = ["rgb", "effect", str(mode_name), "-s", str(speed), "-b", str(brightness), "-d", str(direction)]
+                args = [
+                    "rgb",
+                    "effect",
+                    str(mode_name),
+                    "-s",
+                    str(speed),
+                    "-b",
+                    str(brightness),
+                    "-d",
+                    str(direction),
+                ]
                 if ctext:
                     _ = parse_hex_color(ctext)
                     args += ["-c", ctext]
@@ -495,6 +542,7 @@ class LinuwuApp(Adw.Application):
             sig = " ".join(args)
             if sig == last_effect_args:
                 return
+
             def _done(ok: bool, msg: str):
                 nonlocal last_effect_args
                 if ok:
@@ -502,6 +550,7 @@ class LinuwuApp(Adw.Application):
                     last_effect_args = sig
                 else:
                     notifier.error(msg)
+
             run_privileged_async(args, _done)
 
         def _effect_touch():
@@ -509,6 +558,7 @@ class LinuwuApp(Adw.Application):
             effect_last_change = GLib.get_monotonic_time()
             if effect_timer_id is not None:
                 return
+
             def _tick():
                 nonlocal effect_timer_id
                 if GLib.get_monotonic_time() - effect_last_change >= EFFECT_DELAY_US:
@@ -516,6 +566,7 @@ class LinuwuApp(Adw.Application):
                     effect_timer_id = None
                     return False
                 return True
+
             effect_timer_id = GLib.timeout_add(100, _tick)
 
         # ---------------- Off section ----------------
@@ -523,20 +574,26 @@ class LinuwuApp(Adw.Application):
         off_row.set_show_enable_switch(True)
         off_row.set_enable_expansion(False)
 
-        off_hint = Gtk.Label(label="Turn off keyboard backlight (brightness 0)", xalign=0)
+        off_hint = Gtk.Label(
+            label="Turn off keyboard backlight (brightness 0)", xalign=0
+        )
         off_hint.add_css_class("dim-label")
-        off_row.add_row(Adw.ActionRow(title="", subtitle="Sets color to #ffffff and brightness 0"))
+        off_row.add_row(
+            Adw.ActionRow(title="", subtitle="Sets color to #ffffff and brightness 0")
+        )
 
         def apply_off():
             try:
                 # Prefer per-zone with brightness 0
                 colors = ["ffffff"] * 4
                 args = ["rgb", "per-zone", *colors, "-b", "0"]
+
                 def _done(ok: bool, msg: str):
                     if ok:
                         notifier.info("Keyboard backlight turned off")
                     else:
                         notifier.error(msg)
+
                 run_privileged_async(args, _done)
             except Exception as e:
                 notifier.error(f"Error: {e}")
@@ -551,9 +608,18 @@ class LinuwuApp(Adw.Application):
 
         make_exclusive_controller([per_row, eff_row, off_row])
         # Now wire per-row toggles to trigger applies when enabled
-        per_row.connect("notify::enable-expansion", lambda *_: per_row.get_enable_expansion() and _per_zone_touch())
-        eff_row.connect("notify::enable-expansion", lambda *_: eff_row.get_enable_expansion() and _effect_touch())
-        off_row.connect("notify::enable-expansion", lambda *_: off_row.get_enable_expansion() and apply_off())
+        per_row.connect(
+            "notify::enable-expansion",
+            lambda *_: per_row.get_enable_expansion() and _per_zone_touch(),
+        )
+        eff_row.connect(
+            "notify::enable-expansion",
+            lambda *_: eff_row.get_enable_expansion() and _effect_touch(),
+        )
+        off_row.connect(
+            "notify::enable-expansion",
+            lambda *_: off_row.get_enable_expansion() and apply_off(),
+        )
 
         # Utilities: read current values from sysfs and populate UI
         ID_TO_MODE = {v: k for k, v in ctl.MODE_NAME_TO_ID.items()}
@@ -686,7 +752,9 @@ class LinuwuApp(Adw.Application):
         color_row.connect("notify::text", lambda *_: _effect_touch())
 
         # ---------------- Back logo section ----------------
-        def _build_logo_group() -> tuple[Optional[Adw.PreferencesGroup], Callable[[], None]]:
+        def _build_logo_group() -> tuple[
+            Optional[Adw.PreferencesGroup], Callable[[], None]
+        ]:
             if not path_exists(ctl.LOGO_COLOR):
                 return None, (lambda: None)
 
@@ -702,7 +770,9 @@ class LinuwuApp(Adw.Application):
 
             logo_brightness = Adw.SpinRow(
                 title="Brightness",
-                adjustment=Gtk.Adjustment(lower=0, upper=100, step_increment=1, page_increment=10, value=100),
+                adjustment=Gtk.Adjustment(
+                    lower=0, upper=100, step_increment=1, page_increment=10, value=100
+                ),
             )
             grp.add(logo_brightness)
 
@@ -731,6 +801,7 @@ class LinuwuApp(Adw.Application):
                 sig = " ".join(args)
                 if sig == last_logo_sig:
                     return
+
                 def _done(ok: bool, msg: str):
                     nonlocal last_logo_sig
                     if ok:
@@ -738,6 +809,7 @@ class LinuwuApp(Adw.Application):
                         last_logo_sig = sig
                     else:
                         notifier.error(msg)
+
                 run_privileged_async(args, _done)
 
             def _logo_touch():
@@ -745,6 +817,7 @@ class LinuwuApp(Adw.Application):
                 logo_last_change = GLib.get_monotonic_time()
                 if logo_timer_id is not None:
                     return
+
                 def _tick():
                     nonlocal logo_timer_id
                     if GLib.get_monotonic_time() - logo_last_change >= LOGO_DELAY_US:
@@ -752,6 +825,7 @@ class LinuwuApp(Adw.Application):
                         logo_timer_id = None
                         return False
                     return True
+
                 logo_timer_id = GLib.timeout_add(100, _tick)
 
             # Wire inputs
@@ -788,7 +862,9 @@ class LinuwuApp(Adw.Application):
         return page, (lambda: (_refresh_keyboard(), _refresh_logo()))
 
     # Power page
-    def _build_power_page(self, notifier: StatusNotifier) -> tuple[Gtk.Widget, Callable[[], None]]:
+    def _build_power_page(
+        self, notifier: StatusNotifier
+    ) -> tuple[Gtk.Widget, Callable[[], None]]:
         page = Adw.PreferencesPage(title="Power")
         group = Adw.PreferencesGroup(title="Platform profile")
 
@@ -854,17 +930,24 @@ class LinuwuApp(Adw.Application):
             if power_refreshing:
                 return
             try:
-                sel = choices[combo.get_selected()] if choices and combo.get_selected() >= 0 else None
+                sel = (
+                    choices[combo.get_selected()]
+                    if choices and combo.get_selected() >= 0
+                    else None
+                )
                 if not sel:
                     return
+
                 def _done(ok: bool, msg: str):
                     if ok:
                         notifier.info(f"Power profile set to {sel}")
                     else:
                         notifier.error(msg)
+
                 run_privileged_async(["power", "set", sel], _done)
             except Exception as e:
                 notifier.error(f"Error: {e}")
+
         combo.connect("notify::selected", lambda *_: _apply_power_from_combo())
 
         def _on_battery_toggle(*_):
@@ -872,10 +955,13 @@ class LinuwuApp(Adw.Application):
             if power_refreshing:
                 return
             val = battery_row.get_active()
+
             def _done(ok: bool, msg: str):
                 nonlocal power_refreshing
                 if ok:
-                    notifier.info("Battery limit enabled" if val else "Battery limit disabled")
+                    notifier.info(
+                        "Battery limit enabled" if val else "Battery limit disabled"
+                    )
                 else:
                     notifier.error(msg)
                     # Revert switch on failure without re-triggering
@@ -885,7 +971,9 @@ class LinuwuApp(Adw.Application):
                         battery_row.set_active(not val)
                     finally:
                         power_refreshing = prev
+
             run_privileged_async(["battery", "on" if val else "off"], _done)
+
         battery_row.connect("notify::active", _on_battery_toggle)
 
         btn_refresh = Gtk.Button(label="Refresh")
@@ -898,6 +986,7 @@ class LinuwuApp(Adw.Application):
         group.add(row_refresh)
 
         page.add(group)
+
         # Wrap original refresh to set guard
         def _wrapped_refresh():
             nonlocal power_refreshing
@@ -906,11 +995,14 @@ class LinuwuApp(Adw.Application):
                 refresh()
             finally:
                 power_refreshing = False
+
         _wrapped_refresh()
         return page, _wrapped_refresh
 
     # Fans page
-    def _build_fans_page(self, notifier: StatusNotifier) -> tuple[Gtk.Widget, Callable[[], None]]:
+    def _build_fans_page(
+        self, notifier: StatusNotifier
+    ) -> tuple[Gtk.Widget, Callable[[], None]]:
         page = Adw.PreferencesPage(title="Fans")
         group = Adw.PreferencesGroup(title="Manual control")
 
@@ -923,13 +1015,23 @@ class LinuwuApp(Adw.Application):
 
         cpu_auto = Adw.SwitchRow(title="CPU: Auto")
         cpu_auto.set_active(True)
-        cpu_row = Adw.SpinRow(title="CPU: Percent", adjustment=Gtk.Adjustment(lower=1, upper=100, step_increment=1, page_increment=10, value=50))
+        cpu_row = Adw.SpinRow(
+            title="CPU: Percent",
+            adjustment=Gtk.Adjustment(
+                lower=1, upper=100, step_increment=1, page_increment=10, value=50
+            ),
+        )
         group.add(cpu_auto)
         group.add(cpu_row)
 
         gpu_auto = Adw.SwitchRow(title="GPU: Auto")
         gpu_auto.set_active(True)
-        gpu_row = Adw.SpinRow(title="GPU: Percent", adjustment=Gtk.Adjustment(lower=1, upper=100, step_increment=1, page_increment=10, value=50))
+        gpu_row = Adw.SpinRow(
+            title="GPU: Percent",
+            adjustment=Gtk.Adjustment(
+                lower=1, upper=100, step_increment=1, page_increment=10, value=50
+            ),
+        )
         group.add(gpu_auto)
         group.add(gpu_row)
 
@@ -959,14 +1061,28 @@ class LinuwuApp(Adw.Application):
                     cpu_row.set_value(gpu_row.get_value())
             _sync_sensitivity()
 
-        cpu_auto.connect("notify::active", lambda *_: (_maybe_link_from_cpu(), _sync_linked_visibility()))
-        gpu_auto.connect("notify::active", lambda *_: (_maybe_link_from_gpu(), _sync_linked_visibility()))
+        cpu_auto.connect(
+            "notify::active",
+            lambda *_: (_maybe_link_from_cpu(), _sync_linked_visibility()),
+        )
+        gpu_auto.connect(
+            "notify::active",
+            lambda *_: (_maybe_link_from_gpu(), _sync_linked_visibility()),
+        )
+
         def _on_link_toggle(*_):
             _maybe_link_from_cpu()
             _sync_linked_visibility()
+
         link_row.connect("notify::active", _on_link_toggle)
-        cpu_row.connect("notify::value", lambda *_: (_maybe_link_from_cpu(), _sync_linked_visibility()))
-        gpu_row.connect("notify::value", lambda *_: (_maybe_link_from_gpu(), _sync_linked_visibility()))
+        cpu_row.connect(
+            "notify::value",
+            lambda *_: (_maybe_link_from_cpu(), _sync_linked_visibility()),
+        )
+        gpu_row.connect(
+            "notify::value",
+            lambda *_: (_maybe_link_from_gpu(), _sync_linked_visibility()),
+        )
 
         _sync_sensitivity()
         _sync_linked_visibility()
@@ -981,8 +1097,12 @@ class LinuwuApp(Adw.Application):
             try:
                 if cpu_auto.get_active() and gpu_auto.get_active():
                     return ["fan", "auto"]
-                cpuv = "auto" if cpu_auto.get_active() else str(int(cpu_row.get_value()))
-                gpuv = "auto" if gpu_auto.get_active() else str(int(gpu_row.get_value()))
+                cpuv = (
+                    "auto" if cpu_auto.get_active() else str(int(cpu_row.get_value()))
+                )
+                gpuv = (
+                    "auto" if gpu_auto.get_active() else str(int(gpu_row.get_value()))
+                )
                 return ["fan", "set", "--cpu", cpuv, "--gpu", gpuv]
             except Exception:
                 return None
@@ -993,12 +1113,14 @@ class LinuwuApp(Adw.Application):
             args = _compute_fans_args()
             if not args:
                 return
+
             def _done(ok: bool, msg: str):
                 if ok:
                     notifier.info("Fan settings applied")
                     refresh()
                 else:
                     notifier.error(msg)
+
             run_privileged_async(args, _done)
 
         def _schedule_apply_fans():
@@ -1011,10 +1133,13 @@ class LinuwuApp(Adw.Application):
                 except Exception:
                     pass
                 fans_debounce_id = None
+
             def _timeout():
                 _apply_fans_now()
                 return False
+
             fans_debounce_id = GLib.timeout_add(400, _timeout)
+
         status_label = Gtk.Label(xalign=0)
         status_label.add_css_class("dim-label")
         row_status = Adw.ActionRow(title="Current values (CPU, GPU)")
@@ -1030,7 +1155,9 @@ class LinuwuApp(Adw.Application):
                     status_label.set_text("unavailable")
                     return
                 raw = read_text(p)
-                parts = [s.strip() for s in raw.replace("\n", "").split(",") if s.strip()]
+                parts = [
+                    s.strip() for s in raw.replace("\n", "").split(",") if s.strip()
+                ]
                 if len(parts) >= 2:
                     c = int(parts[0])
                     g = int(parts[1])
@@ -1078,12 +1205,19 @@ class LinuwuApp(Adw.Application):
 def main(argv: Optional[List[str]] = None) -> int:
     # Parse our CLI flags first and pass through unknowns to GTK/GApplication
     import argparse
+
     argv = argv or sys.argv
     parser = argparse.ArgumentParser(add_help=True, prog=os.path.basename(argv[0]))
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("-k", "--keyboard", action="store_true", help="Open on the Keyboard page")
-    group.add_argument("-p", "--power", action="store_true", help="Open on the Power page")
-    group.add_argument("-f", "--fans", action="store_true", help="Open on the Fans page")
+    group.add_argument(
+        "-k", "--keyboard", action="store_true", help="Open on the Keyboard page"
+    )
+    group.add_argument(
+        "-p", "--power", action="store_true", help="Open on the Power page"
+    )
+    group.add_argument(
+        "-f", "--fans", action="store_true", help="Open on the Fans page"
+    )
     args, unknown = parser.parse_known_args(argv[1:])
 
     initial_page = "keyboard"
