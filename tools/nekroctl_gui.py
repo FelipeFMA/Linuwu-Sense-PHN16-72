@@ -10,10 +10,10 @@ Features:
 - Fans: set auto or CPU/GPU percentages
 
 Notes:
-- Privileged operations are executed via polkit using `pkexec` by spawning
-    the CLI helper `nekroctl.py`. If permission is denied when running
-    unprivileged, the GUI will re-run the action with `pkexec` and prompt for
-    authentication when needed.
+- Privileged operations prefer using `sudo` in non-interactive mode first
+  (so NOPASSWD sudoers or cached credentials can be used). Only if sudo
+  is not possible without prompting for a password the GUI falls back to
+  polkit via `pkexec` which will show a graphical authentication prompt.
 
 Run:
 - python3 tools/nekroctl_gui.py
@@ -54,7 +54,7 @@ except Exception as e:
     raise
 
 
-# ---------- Privilege helper via polkit (pkexec) ----------
+# ---------- Privilege helper via sudo (preferred) and polkit (pkexec) ----------
 NEKROCTL_PATH = os.path.join(HERE, "nekroctl.py")
 
 
@@ -62,11 +62,35 @@ def _have_pkexec() -> bool:
     return shutil.which("pkexec") is not None
 
 
+def _have_sudo() -> bool:
+    return shutil.which("sudo") is not None
+
+
 def _run_nekroctl(args: List[str]) -> tuple[int, str, str]:
     """
     Run the CLI helper without elevation. Returns (code, stdout, stderr).
     """
     cmd = [sys.executable, NEKROCTL_PATH] + args
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=HERE,
+    )
+    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+
+def _run_with_sudo(args: List[str]) -> tuple[int, str, str]:
+    """
+    Run the CLI helper via sudo in non-interactive mode. Returns (code, stdout, stderr).
+
+    Uses `sudo -n` so it will not prompt for a password; when a password is required
+    sudo will fail immediately and we can fall back to pkexec which provides a GUI prompt.
+    """
+    if not _have_sudo():
+        return 127, "", "sudo not found"
+    cmd = ["sudo", "-n", sys.executable, NEKROCTL_PATH] + args
     proc = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
@@ -96,23 +120,62 @@ def _run_with_pkexec(args: List[str]) -> tuple[int, str, str]:
 
 def run_privileged(args: List[str]) -> tuple[bool, str]:
     """
-    Try to run CLI normally; if permission-related failure, retry with pkexec.
+    Try to run CLI normally; if permission-related failure, try sudo (non-interactive).
+    Only if sudo would require a password (or is missing) fall back to pkexec (polkit).
+
     Returns (success, message) combining stdout/stderr).
     """
+    # Try without elevation first (many reads may not require root)
     code, out, err = _run_nekroctl(args)
     if code == 0:
         return True, out or "OK"
-    # If PermissionError was propagated by CLI, it returns code 3
-    perm_denied = (code == 3) or (
-        "Permission denied" in err or "permission" in err.lower()
+
+    # Narrow permission failure detection to avoid false positives that
+    # would trigger unnecessary elevation (and polkit prompts).
+    err_l = (err or "").lower()
+    perm_denied = (
+        (code == 3)
+        or ("permission denied" in err_l)
+        or ("operation not permitted" in err_l)
+        or ("not authorized" in err_l)
+        or ("authentication is required" in err_l)
+        or ("must be root" in err_l)
     )
-    if perm_denied:
-        code2, out2, err2 = _run_with_pkexec(args)
-        if code2 == 0:
-            return True, out2 or "OK"
-        msg = err2 or out2 or err or out or f"Failed with code {code2}"
+
+    if not perm_denied:
+        # Not a permission issue — return original error
+        return False, err or out or f"Failed with code {code}"
+
+    # Try sudo -n (non-interactive). This will succeed when user has NOPASSWD
+    # or when credential caching is available and does not require interactive prompt.
+    code2, out2, err2 = _run_with_sudo(args)
+    if code2 == 0:
+        return True, out2 or "OK"
+
+    # Heuristics for when sudo failed because it requires a password or can't prompt.
+    err2_l = (err2 or "").lower()
+    sudo_requires_password = (
+        code2 == 127  # sudo not present or invoked failed in a noticeable way
+        or "a password is required" in err2_l
+        or "password" in err2_l
+        and ("authentication" in err2_l or "is required" in err2_l)
+        or "no tty present" in err2_l
+        or "unable to authenticate" in err2_l
+        or "sorry, you must have a tty to run sudo" in err2_l
+    )
+
+    if sudo_requires_password:
+        # Fallback to pkexec/polkit which will show a GUI prompt
+        code3, out3, err3 = _run_with_pkexec(args)
+        if code3 == 0:
+            return True, out3 or "OK"
+        # Prefer pkexec stderr, then stdout, then sudo's output, then original
+        msg = err3 or out3 or err2 or out2 or err or out or f"Failed with code {code3}"
         return False, msg
-    msg = err or out or f"Failed with code {code}"
+
+    # If sudo failed for another reason (authorization denied, misconfigured sudo),
+    # prefer returning sudo error so user can inspect it.
+    msg = err2 or out2 or err or out or f"Failed with code {code2}"
     return False, msg
 
 
