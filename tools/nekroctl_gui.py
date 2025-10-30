@@ -268,13 +268,19 @@ class LinuwuApp(Adw.Application):
 
         # Header and status
         header = Adw.HeaderBar()
-        # App menu
+        # App menu + global refresh button
         menu_model = Gio.Menu()
         menu_model.append("Refresh All", "app.refresh")
         menu_model.append("About", "app.about")
         menu_btn = Gtk.MenuButton()
         menu_btn.set_icon_name("open-menu-symbolic")
         menu_btn.set_menu_model(menu_model)
+        # Global refresh button (triggers app.refresh action)
+        refresh_btn = Gtk.Button(label="Refresh")
+        refresh_btn.set_tooltip_text("Refresh all pages")
+        refresh_btn.set_margin_end(6)
+        refresh_btn.connect("clicked", lambda _b: self.activate_action("refresh", None))
+        header.pack_end(refresh_btn)
         header.pack_end(menu_btn)
 
         status = Gtk.Label(xalign=0)
@@ -785,17 +791,8 @@ class LinuwuApp(Adw.Application):
             except Exception:
                 pass
 
-        # Add a manual Refresh button for convenience
-        refresh_group = Adw.PreferencesGroup(title="Sync from device")
-        btn_refresh = Gtk.Button(label="Refresh")
-        btn_refresh.set_halign(Gtk.Align.START)
-        btn_refresh.set_margin_start(12)
-        btn_refresh.connect("clicked", lambda _b: _refresh_keyboard())
-        row_refresh = Adw.ActionRow(title="Read current keyboard state")
-        row_refresh.add_suffix(btn_refresh)
-        row_refresh.set_activatable_widget(btn_refresh)
-        refresh_group.add(row_refresh)
-        page.add(refresh_group)
+        # Per-page refresh removed; use the global Refresh button in the header to
+        # refresh Keyboard, Power and Fans pages at once.
 
         # Initial populate
         _refresh_keyboard()
@@ -1039,14 +1036,8 @@ class LinuwuApp(Adw.Application):
 
         battery_row.connect("notify::active", _on_battery_toggle)
 
-        btn_refresh = Gtk.Button(label="Refresh")
-        btn_refresh.set_halign(Gtk.Align.START)
-        btn_refresh.set_margin_start(12)
-        btn_refresh.connect("clicked", lambda _b: refresh())
-        row_refresh = Adw.ActionRow(title="Refresh choices/current")
-        row_refresh.add_suffix(btn_refresh)
-        row_refresh.set_activatable_widget(btn_refresh)
-        group.add(row_refresh)
+        # Per-page refresh removed; use the global Refresh button in the header to
+        # refresh Keyboard, Power and Fans pages at once.
 
         page.add(group)
 
@@ -1245,14 +1236,8 @@ class LinuwuApp(Adw.Application):
             finally:
                 fans_refreshing = False
 
-        btn_refresh = Gtk.Button(label="Refresh")
-        btn_refresh.set_halign(Gtk.Align.START)
-        btn_refresh.set_margin_start(12)
-        btn_refresh.connect("clicked", lambda _b: refresh())
-        row_refresh = Adw.ActionRow(title="Refresh current")
-        row_refresh.add_suffix(btn_refresh)
-        row_refresh.set_activatable_widget(btn_refresh)
-        group.add(row_refresh)
+        # Per-page refresh removed; use the global Refresh button in the header to
+        # refresh Keyboard, Power and Fans pages at once.
 
         # Wire change events for instant apply
         cpu_auto.connect("notify::active", lambda *_: _schedule_apply_fans())
