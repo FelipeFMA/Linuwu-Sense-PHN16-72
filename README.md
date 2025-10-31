@@ -5,7 +5,7 @@ It controls power modes, fan speeds, keyboard RGB, and the backlit logo RGB. It 
 
 This README explains how to build, install, and use the driver.
 
-## IMPORTANT: GPU PERFORMANCE
+#### IMPORTANT: GPU PERFORMANCE
 
 To achieve maximum GPU performance on the Acer Predator PHN16-72 you MUST install the `nvidia-open` drivers and enable the `nvidia-powerd` service. The discrete NVIDIA GPU is locked to an 80W power limit by default; enabling `nvidia-powerd` raises the power limit to 140W so the GPU can run at full performance.
 
